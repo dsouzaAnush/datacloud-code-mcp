@@ -69,7 +69,7 @@ Reference:
 ## Quick Start
 
 ```bash
-cd /Users/anush.dsouza/startup/Aura12/work/codemode/datacloud
+cd datacloud
 npm install
 npm run build
 npm test
@@ -208,7 +208,7 @@ Write dry run:
 
 ## Configuration
 
-See `/Users/anush.dsouza/startup/Aura12/work/codemode/datacloud/.env.example`.
+See `.env.example`.
 
 Key vars:
 - `DATACLOUD_OPENAPI_PATH`
@@ -226,7 +226,7 @@ Key vars:
 
 ## Project Layout
 
-- Source: `/Users/anush.dsouza/startup/Aura12/work/codemode/datacloud/src`
-- Tests: `/Users/anush.dsouza/startup/Aura12/work/codemode/datacloud/tests`
-- Scripts: `/Users/anush.dsouza/startup/Aura12/work/codemode/datacloud/scripts`
-- References: `/Users/anush.dsouza/startup/Aura12/work/codemode/datacloud/REFERENCES.md`
+- Source: `src`
+- Tests: `tests`
+- Scripts: `scripts`
+- References: `REFERENCES.md`
