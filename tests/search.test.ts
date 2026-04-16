@@ -1,80 +1,92 @@
 import { describe, expect, test } from "vitest";
-import { SearchIndex } from "../src/search/search-index.js";
-import type { PlatformOperation } from "../src/types.js";
+import { runUserCode } from "../src/sandbox/runner.js";
+import type { ResolvedSpec } from "../src/schema/spec-processor.js";
 
-function makeOperation(input: Partial<PlatformOperation>): PlatformOperation {
-  return {
-    operationId: input.operationId ?? "GET /api/v1/metadata/",
-    method: input.method ?? "GET",
-    pathTemplate: input.pathTemplate ?? "/api/v1/metadata/",
-    rawHref: input.rawHref ?? "/api/v1/metadata/",
-    source: input.source ?? "Data Cloud",
-    pathParams: input.pathParams ?? [],
-    queryParams: input.queryParams ?? [],
-    requiredParams: input.requiredParams ?? [],
-    isMutating: input.isMutating ?? false,
-    searchText: input.searchText ?? "",
-    title: input.title,
-    description: input.description,
-    rel: input.rel,
-    requestSchema: input.requestSchema,
-    targetSchemaRef: input.targetSchemaRef
-  };
-}
+const fixtureSpec: ResolvedSpec = {
+  paths: {
+    "/services/data/v64.0/ssot/query-sql": {
+      post: {
+        summary: "Create SQL Query",
+        description: "Execute SQL query against Data Cloud data",
+        tags: ["query"],
+        requestBody: {
+          content: {
+            "application/json": {
+              schema: { type: "object", required: ["sql"], properties: { sql: { type: "string" } } }
+            }
+          }
+        }
+      }
+    },
+    "/services/data/v64.0/ssot/data-streams": {
+      get: {
+        summary: "List Data Streams",
+        description: "List configured data streams",
+        tags: ["data-streams"]
+      }
+    },
+    "/services/data/v64.0/ssot/segments": {
+      get: { summary: "List segments", tags: ["segments"] },
+      post: { summary: "Create segment", tags: ["segments"] }
+    },
+    "/services/data/v64.0/ssot/calculated-insights": {
+      get: { summary: "List calculated insights", tags: ["calculated-insights"] },
+      post: { summary: "Create calculated insight", tags: ["calculated-insights"] }
+    }
+  }
+};
 
-describe("SearchIndex", () => {
-  test("ranks SQL query operation for query intent", () => {
-    const index = new SearchIndex();
-    index.setOperations(
-      [
-        makeOperation({
-          operationId: "POST /services/data/v64.0/ssot/query-sql",
-          method: "POST",
-          pathTemplate: "/services/data/v64.0/ssot/query-sql",
-          title: "Create SQL Query",
-          description: "Execute SQL query against Data Cloud data",
-          searchText: "data cloud sql query"
-        }),
-        makeOperation({
-          operationId: "GET /services/data/v64.0/ssot/data-streams",
-          method: "GET",
-          pathTemplate: "/services/data/v64.0/ssot/data-streams",
-          title: "List Data Streams",
-          description: "List configured data streams",
-          searchText: "data streams list"
-        })
-      ],
-      "Data Cloud API docs"
+const opts = { timeoutMs: 5000 };
+
+describe("search via code-mode", () => {
+  test("finds endpoints by tag", async () => {
+    const res = await runUserCode(
+      `async () => {
+        const results = [];
+        for (const [path, methods] of Object.entries(spec.paths)) {
+          for (const [method, op] of Object.entries(methods)) {
+            if (op.tags?.some(t => t === 'segments')) {
+              results.push({ method: method.toUpperCase(), path, summary: op.summary });
+            }
+          }
+        }
+        return results;
+      }`,
+      { spec: fixtureSpec },
+      opts
     );
-
-    const result = index.search({ query: "run sql query", limit: 5 });
-    expect(result.results[0]?.operation_id).toBe("POST /services/data/v64.0/ssot/query-sql");
+    expect(res.err).toBeUndefined();
+    const results = res.result as unknown[];
+    expect(results).toHaveLength(2);
   });
 
-  test("returns ranked disambiguation for segment query", () => {
-    const index = new SearchIndex();
-    index.setOperations(
-      [
-        makeOperation({
-          operationId: "GET /services/data/v64.0/ssot/segments",
-          method: "GET",
-          pathTemplate: "/services/data/v64.0/ssot/segments",
-          title: "List segments",
-          searchText: "segments list"
-        }),
-        makeOperation({
-          operationId: "POST /services/data/v64.0/ssot/segments",
-          method: "POST",
-          pathTemplate: "/services/data/v64.0/ssot/segments",
-          title: "Create segment",
-          searchText: "segments create"
-        })
-      ],
-      ""
+  test("drills into schema details", async () => {
+    const res = await runUserCode(
+      `async () => {
+        const op = spec.paths['/services/data/v64.0/ssot/query-sql']?.post;
+        return { summary: op?.summary, requestBody: op?.requestBody };
+      }`,
+      { spec: fixtureSpec },
+      opts
     );
+    expect(res.err).toBeUndefined();
+    const out = res.result as { summary: string; requestBody: unknown };
+    expect(out.summary).toBe("Create SQL Query");
+    expect(out.requestBody).toBeTruthy();
+  });
 
-    const result = index.search({ query: "segments", limit: 5 });
-    expect(result.results.length).toBeGreaterThanOrEqual(2);
-    expect(result.results[0]?.score).toBeGreaterThanOrEqual(result.results[1]?.score ?? 0);
+  test("counts all endpoints", async () => {
+    const res = await runUserCode(
+      `async () => {
+        let count = 0;
+        for (const methods of Object.values(spec.paths)) {
+          count += Object.keys(methods).length;
+        }
+        return count;
+      }`,
+      { spec: fixtureSpec },
+      opts
+    );
+    expect(res.result).toBe(6);
   });
 });

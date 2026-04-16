@@ -1,0 +1,209 @@
+{
+  "info": {
+    "_postman_id": "cdp-mcp-server-java",
+    "name": "CDP MCP Server (Java - Hosted Mode)",
+    "description": "Postman collection for the Java CDP MCP Server running in hosted mode (port 8090).\n\nStart the server with:\n  java -jar target/data360-mcp-server-*.jar --spring.profiles.active=hosted\n\nMCP endpoint uses JSON-RPC 2.0 over Streamable HTTP transport.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8090",
+      "type": "string"
+    },
+    {
+      "key": "mcpEndpoint",
+      "value": "{{baseUrl}}/mcp",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Server",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Verify the server is running. Returns 200 OK with status JSON."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Auth Start",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "start"]
+            },
+            "description": "Initiate OAuth2 authorization flow. Redirects the browser to the Salesforce login page. Requires CDP_CLIENT_ID and CDP_LOGIN_URL to be configured."
+          },
+          "response": []
+        },
+        {
+          "name": "Auth Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "status"]
+            },
+            "description": "Check current authentication status. Returns JSON with authenticated flag, authMode, and instanceUrl."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "MCP",
+      "item": [
+        {
+          "name": "MCP - List Tools",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/list\",\n  \"params\": {}\n}"
+            },
+            "url": {
+              "raw": "{{mcpEndpoint}}",
+              "host": ["{{mcpEndpoint}}"]
+            },
+            "description": "List all available MCP tools. Returns the full tool catalog with names, descriptions, and input schemas. Expect 175+ tools across 21 API families."
+          },
+          "response": []
+        },
+        {
+          "name": "MCP - Call Tool (Query SQL)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"d360_query_sql\",\n    \"arguments\": {\n      \"sql\": \"SELECT Id__c, FirstName__c, LastName__c FROM UnifiedIndividual__dlm LIMIT 10\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{mcpEndpoint}}",
+              "host": ["{{mcpEndpoint}}"]
+            },
+            "description": "Execute a SQL query against Data Cloud. Uses the Query API V2 (async). Returns query job ID and metadata; use d360_query_sql_status and d360_query_sql_rows to fetch results."
+          },
+          "response": []
+        },
+        {
+          "name": "MCP - Call Tool (Metadata)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 3,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"d360_metadata\",\n    \"arguments\": {}\n  }\n}"
+            },
+            "url": {
+              "raw": "{{mcpEndpoint}}",
+              "host": ["{{mcpEndpoint}}"]
+            },
+            "description": "Retrieve all Data Cloud metadata including data model objects, data lake objects, calculated insights, and more."
+          },
+          "response": []
+        },
+        {
+          "name": "MCP - Call Tool (Discover by Family)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 4,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"d360_discover\",\n    \"arguments\": {\n      \"category\": \"query\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{mcpEndpoint}}",
+              "host": ["{{mcpEndpoint}}"]
+            },
+            "description": "Discover tools within a specific API family. Pass a category like 'query', 'metadata', 'dmo', 'segment', 'sdm', etc. to see available tools and their descriptions."
+          },
+          "response": []
+        },
+        {
+          "name": "MCP - Call Tool (List Families)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 5,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"d360_discover\",\n    \"arguments\": {}\n  }\n}"
+            },
+            "url": {
+              "raw": "{{mcpEndpoint}}",
+              "host": ["{{mcpEndpoint}}"]
+            },
+            "description": "List all available API families (tool categories). Returns the full catalog of tool families with tool counts and descriptions."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

@@ -8,9 +8,8 @@ import { createLogger } from "./logger.js";
 import { EncryptedTokenStore } from "./auth/token-store.js";
 import { DataCloudOAuthService } from "./auth/oauth-service.js";
 import { DataCloudSchemaService } from "./schema/datacloud-schema-service.js";
-import { SearchIndex } from "./search/search-index.js";
-import { DataCloudExecutor } from "./execute/datacloud-executor.js";
 import { createDataCloudMcpServer } from "./mcp-server.js";
+import { resolveAuthService } from "./auth/auth-modes.js";
 
 interface SessionRecord {
   transport: StreamableHTTPServerTransport;
@@ -44,20 +43,15 @@ async function main(): Promise<void> {
   }
 
   const tokenStore = new EncryptedTokenStore(appConfig.tokenStorePath, encryptionKey);
-  const oauthService = new DataCloudOAuthService(appConfig, tokenStore, logger);
+  const baseOauthService = new DataCloudOAuthService(appConfig, tokenStore, logger);
+  const oauthService = resolveAuthService(appConfig, baseOauthService, logger);
+
   const schemaService = new DataCloudSchemaService(appConfig, logger);
-  const searchIndex = new SearchIndex();
 
   await schemaService.bootstrapFromCache();
-  if (schemaService.getOperations().length > 0) {
-    searchIndex.setOperations(schemaService.getOperations(), schemaService.getDocsContext());
-  }
 
   const refreshCatalog = async (force: boolean) => {
     await schemaService.refresh(force);
-    if (schemaService.getOperations().length > 0) {
-      searchIndex.setOperations(schemaService.getOperations(), schemaService.getDocsContext());
-    }
   };
 
   void refreshCatalog(schemaService.getOperations().length === 0).catch((error) => {
@@ -66,33 +60,31 @@ async function main(): Promise<void> {
 
   setInterval(async () => {
     try {
-      oauthService.purgeExpiredState();
+      baseOauthService.purgeExpiredState();
       await refreshCatalog(false);
     } catch (error) {
       logger.warn({ err: error }, "Background refresh failed");
     }
   }, appConfig.schemaRefreshMs).unref();
 
-  const executor = new DataCloudExecutor({
-    config: appConfig,
-    logger,
-    getOperation: (operationId) => schemaService.getOperation(operationId),
-    getRootSchema: () => schemaService.getRootSchema(),
-    getAuthContext: async (userId) => oauthService.getAuthContext(userId)
-  });
-
   const app = createMcpExpressApp({ host: appConfig.host });
   app.use(pinoHttp({ logger }));
 
   app.get("/healthz", (_req, res) => {
-    res.json({ ok: true, service: "datacloud-code-mode-mcp" });
+    const ops = schemaService.getOperations().length;
+    const healthy = ops > 0;
+    res.status(healthy ? 200 : 503).json({
+      ok: healthy,
+      service: "datacloud-code-mode-mcp",
+      operations: ops
+    });
   });
 
   app.get("/oauth/start", (req, res) => {
     try {
       const userId = String(req.query.user_id ?? "default");
       const mode = String(req.query.mode ?? "redirect");
-      const url = oauthService.buildAuthorizationUrl(userId);
+      const url = baseOauthService.buildAuthorizationUrl(userId);
 
       if (mode === "json") {
         res.json({ authorization_url: url, user_id: userId });
@@ -115,7 +107,7 @@ async function main(): Promise<void> {
     }
 
     try {
-      const result = await oauthService.handleOAuthCallback(code, state);
+      const result = await baseOauthService.handleOAuthCallback(code, state);
       res
         .status(200)
         .send(`OAuth authentication complete for user: ${result.userId}. You can return to your MCP client.`);
@@ -126,7 +118,7 @@ async function main(): Promise<void> {
 
   app.get("/oauth/status", async (req, res) => {
     const userId = String(req.query.user_id ?? "default");
-    const status = await oauthService.getAuthStatus(userId);
+    const status = await baseOauthService.getAuthStatus(userId);
     res.json({ user_id: userId, ...status });
   });
 
@@ -135,10 +127,9 @@ async function main(): Promise<void> {
   const buildServer = () =>
     createDataCloudMcpServer({
       config: appConfig,
+      logger,
       schemaService,
-      searchIndex,
-      oauthService,
-      executor
+      oauthService
     });
 
   app.post("/mcp", async (req, res) => {
@@ -150,10 +141,7 @@ async function main(): Promise<void> {
         if (!existing) {
           res.status(400).json({
             jsonrpc: "2.0",
-            error: {
-              code: -32000,
-              message: "Unknown MCP session. Initialize first."
-            },
+            error: { code: -32000, message: "Unknown MCP session. Initialize first." },
             id: null
           });
           return;
@@ -166,10 +154,7 @@ async function main(): Promise<void> {
       if (!isInitializeRequest(req.body)) {
         res.status(400).json({
           jsonrpc: "2.0",
-          error: {
-            code: -32000,
-            message: "Missing MCP session ID and request is not initialize"
-          },
+          error: { code: -32000, message: "Missing MCP session ID and request is not initialize" },
           id: null
         });
         return;
@@ -191,12 +176,8 @@ async function main(): Promise<void> {
 
       transport.onclose = async () => {
         const id = transport.sessionId;
-        if (id) {
-          sessions.delete(id);
-        }
-        if (server) {
-          await server.close();
-        }
+        if (id) sessions.delete(id);
+        if (server) await server.close();
       };
 
       await server.connect(transport);
@@ -206,10 +187,7 @@ async function main(): Promise<void> {
       if (!res.headersSent) {
         res.status(500).json({
           jsonrpc: "2.0",
-          error: {
-            code: -32603,
-            message: "Internal server error"
-          },
+          error: { code: -32603, message: "Internal server error" },
           id: null
         });
       }
@@ -218,39 +196,21 @@ async function main(): Promise<void> {
 
   app.get("/mcp", async (req, res) => {
     const sessionId = req.headers["mcp-session-id"];
-
-    if (typeof sessionId !== "string") {
-      res.status(400).send("Missing mcp-session-id header");
-      return;
-    }
-
+    if (typeof sessionId !== "string") { res.status(400).send("Missing mcp-session-id header"); return; }
     const existing = sessions.get(sessionId);
-    if (!existing) {
-      res.status(400).send("Unknown MCP session");
-      return;
-    }
-
+    if (!existing) { res.status(400).send("Unknown MCP session"); return; }
     await existing.transport.handleRequest(req, res);
   });
 
   app.delete("/mcp", async (req, res) => {
     const sessionId = req.headers["mcp-session-id"];
-
-    if (typeof sessionId !== "string") {
-      res.status(400).send("Missing mcp-session-id header");
-      return;
-    }
-
+    if (typeof sessionId !== "string") { res.status(400).send("Missing mcp-session-id header"); return; }
     const existing = sessions.get(sessionId);
-    if (!existing) {
-      res.status(400).send("Unknown MCP session");
-      return;
-    }
-
+    if (!existing) { res.status(400).send("Unknown MCP session"); return; }
     await existing.transport.handleRequest(req, res);
   });
 
-  app.listen(appConfig.port, appConfig.host, () => {
+  const server = app.listen(appConfig.port, appConfig.host, () => {
     logger.info(
       {
         host: appConfig.host,
@@ -260,6 +220,24 @@ async function main(): Promise<void> {
       "Data Cloud Code Mode MCP server started"
     );
   });
+
+  const shutdown = async () => {
+    logger.info("Shutting down gracefully...");
+    for (const [id, session] of sessions.entries()) {
+      try {
+        await session.server.close();
+      } catch { /* best-effort */ }
+      sessions.delete(id);
+    }
+    server.close(() => {
+      logger.info("HTTP server closed");
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 10_000).unref();
+  };
+
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }
 
 main().catch((error) => {

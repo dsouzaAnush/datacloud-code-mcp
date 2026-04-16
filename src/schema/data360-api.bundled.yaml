@@ -1,0 +1,3105 @@
+openapi: 3.0.3
+info:
+  title: Salesforce Data 360 API
+  version: v64.0
+  description: |
+    Salesforce Data 360 REST APIs for querying, managing, and analyzing customer data.
+
+    Data 360 enables you to collect, store, and process data from Salesforce clouds and external systems.
+    After harmonizing and unifying your data, you can create metrics that span all data sources,
+    providing comprehensive insights.
+
+    ## Authentication
+    All API requests require a valid OAuth 2.0 access token. Include the token in the Authorization header:
+    ```
+    Authorization: Bearer {access_token}
+    ```
+
+    See [OAuth 2.0 Client Credentials Flow](https://help.salesforce.com/s/articleView?id=xcloud.remoteaccess_oauth_client_credentials_flow.htm&type=5) for details.
+
+    ## Rate Limits
+    - Query API: Up to 15 concurrent requests per organization
+    - Profile API: Maximum 50 fields per request, 4,999 rows default limit
+    - Calculated Insights API: Maximum 4,999 rows per query
+
+  contact:
+    name: Salesforce Developer Support
+    url: https://developer.salesforce.com
+  license:
+    name: Salesforce Developer Terms
+    url: https://developer.salesforce.com/developer-terms
+
+servers:
+  - url: https://{instance}.salesforce.com
+    description: Salesforce Production/Sandbox Instance
+    variables:
+      instance:
+        default: your-instance
+        description: |
+          Your Salesforce instance name (e.g., na1, eu5, cs10).
+          For sandbox environments, use the sandbox-specific instance.
+
+tags:
+  - name: Query API
+    description: Execute SQL queries against Data 360 data
+  - name: Profile API
+    description: Query and manage customer profile data
+  - name: Metadata API
+    description: Retrieve metadata about Data 360 entities
+  - name: Calculated Insights API
+    description: Query calculated insights and metrics
+  - name: Data Graph API
+    description: Query precalculated data graph views
+  - name: Universal ID Lookup
+    description: Look up unified customer records across data sources
+  - name: Connect REST API - Data Ingestion
+    description: Stream and batch ingest data into Data 360
+  - name: Connect REST API - Data Streams
+    description: Manage data stream configurations and schemas
+  - name: Connect REST API - Identity Resolution
+    description: Configure and manage identity resolution rules and jobs
+  - name: Connect REST API - Segments
+    description: Create and manage customer segments
+  - name: Connect REST API - Activations
+    description: Configure activation targets and manage data exports
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ============================================================================
+  # Query API Endpoints
+  # ============================================================================
+  /services/data/v64.0/ssot/query-sql:
+    post:
+      operationId: createSqlQuery
+      summary: Create SQL Query
+      description: |
+        Execute a SQL query against Data 360 data. Supports both synchronous and
+        asynchronous execution depending on query complexity and data volume.
+
+        **Best Practices:**
+        - Use WHERE clauses to filter early
+        - Avoid SELECT * - specify needed columns
+        - Use LIMIT for large datasets
+        - Include key qualifiers in joins
+      tags:
+        - Query API
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SqlQueryRequest'
+            examples:
+              simpleQuery:
+                summary: Simple SELECT query
+                value:
+                  sql: "SELECT Id__c, FirstName__c, LastName__c FROM UnifiedIndividual__dlm LIMIT 100"
+              queryWithFilter:
+                summary: Query with WHERE clause
+                value:
+                  sql: "SELECT Id__c, Email__c FROM UnifiedContactPointEmail__dlm WHERE IsActive__c = true"
+              joinQuery:
+                summary: Query with JOIN
+                value:
+                  sql: |
+                    SELECT ui.Id__c, ui.FirstName__c, cpe.Email__c
+                    FROM UnifiedIndividual__dlm ui
+                    JOIN UnifiedContactPointEmail__dlm cpe ON ui.Id__c = cpe.PartyId__c
+                    WHERE cpe.IsActive__c = true
+                    LIMIT 1000
+      responses:
+        '200':
+          description: Query executed successfully (synchronous response)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SqlQueryResponse'
+              example:
+                queryId: "0Xx000000000001AAA"
+                done: true
+                metadata:
+                  columns:
+                    - name: "Id__c"
+                      type: "STRING"
+                    - name: "FirstName__c"
+                      type: "STRING"
+                rowCount: 50
+                data:
+                  - ["001ABC123", "John"]
+                  - ["001ABC124", "Jane"]
+        '202':
+          description: Query accepted (asynchronous execution)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SqlQueryAsyncResponse'
+              example:
+                queryId: "0Xx000000000001AAA"
+                done: false
+                state: "RUNNING"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /services/data/v64.0/ssot/query-sql/{queryId}:
+    get:
+      operationId: getSqlQueryStatus
+      summary: Get SQL Query Status
+      description: |
+        Check the execution status and metadata of a previously submitted query.
+        Use this endpoint to monitor progress for long-running asynchronous queries.
+      tags:
+        - Query API
+      parameters:
+        - $ref: '#/components/parameters/queryId'
+      responses:
+        '200':
+          description: Query status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SqlQueryStatusResponse'
+              example:
+                queryId: "0Xx000000000001AAA"
+                done: true
+                state: "COMPLETED"
+                metadata:
+                  columns:
+                    - name: "Id__c"
+                      type: "STRING"
+                  rowCount: 1500
+                  startTime: "2024-01-15T10:30:00Z"
+                  endTime: "2024-01-15T10:30:05Z"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    delete:
+      operationId: cancelSqlQuery
+      summary: Cancel SQL Query
+      description: |
+        Cancel a running query to free up resources. Useful for managing query
+        timeouts and resource allocation.
+      tags:
+        - Query API
+      parameters:
+        - $ref: '#/components/parameters/queryId'
+      responses:
+        '200':
+          description: Query cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  queryId:
+                    type: string
+                  state:
+                    type: string
+                    enum: [CANCELLED]
+              example:
+                queryId: "0Xx000000000001AAA"
+                state: "CANCELLED"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /services/data/v64.0/ssot/query-sql/{queryId}/rows:
+    get:
+      operationId: getSqlQueryRows
+      summary: Get SQL Query Results
+      description: |
+        Retrieve the results of a completed query with pagination support.
+        Results are cached for 24 hours, allowing multiple retrievals without
+        additional consumption charges.
+
+        **Pagination:**
+        Use `offset` and `rowLimit` parameters to page through large result sets.
+      tags:
+        - Query API
+      parameters:
+        - $ref: '#/components/parameters/queryId'
+        - name: offset
+          in: query
+          description: Number of rows to skip (for pagination)
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: rowLimit
+          in: query
+          description: Maximum number of rows to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1000
+      responses:
+        '200':
+          description: Query results retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SqlQueryRowsResponse'
+              example:
+                queryId: "0Xx000000000001AAA"
+                done: true
+                rowCount: 1500
+                offset: 0
+                nextBatchId: "batch_001"
+                data:
+                  - ["001ABC123", "John", "Doe"]
+                  - ["001ABC124", "Jane", "Smith"]
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ============================================================================
+  # Profile API Endpoints
+  # ============================================================================
+  /api/v1/profile/metadata:
+    get:
+      operationId: getProfileMetadata
+      summary: Get All Profile Metadata
+      description: |
+        Retrieves metadata for all profile data model objects, including field
+        definitions, data types, and available indexes.
+      tags:
+        - Profile API
+      responses:
+        '200':
+          description: Profile metadata retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileMetadataResponse'
+              example:
+                metadata:
+                  - name: "UnifiedIndividual__dlm"
+                    displayName: "Unified Individual"
+                    category: "Profile"
+                    fields:
+                      - name: "Id__c"
+                        displayName: "Record ID"
+                        type: "STRING"
+                      - name: "FirstName__c"
+                        displayName: "First Name"
+                        type: "STRING"
+                    indexes:
+                      - name: "primary"
+                        fields: ["Id__c"]
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/profile/metadata/{dataModelName}:
+    get:
+      operationId: getProfileMetadataByModel
+      summary: Get Profile Metadata by Model
+      description: |
+        Retrieves metadata for a specific profile data model object, including
+        detailed field definitions, data types, and available indexes.
+      tags:
+        - Profile API
+      parameters:
+        - $ref: '#/components/parameters/dataModelName'
+      responses:
+        '200':
+          description: Profile model metadata retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileModelMetadataResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/profile/{dataModelName}:
+    get:
+      operationId: queryProfiles
+      summary: Query Profiles
+      description: |
+        Query profile data based on search filters. Supports filtering by
+        various criteria and returns matching profile records.
+
+        **Limitations:**
+        - Maximum 50 fields per request
+        - Default limit: 4,999 rows
+        - Only AND operator and equality comparator supported
+      tags:
+        - Profile API
+      parameters:
+        - $ref: '#/components/parameters/dataModelName'
+        - name: fields
+          in: query
+          description: Comma-separated list of fields to return
+          schema:
+            type: string
+          example: "Id__c,FirstName__c,LastName__c,Email__c"
+        - name: filters
+          in: query
+          description: |
+            Filter criteria in format: field1=value1,field2=value2
+            All filters are combined with AND operator
+          schema:
+            type: string
+          example: "IsActive__c=true,Country__c=USA"
+        - name: limit
+          in: query
+          description: Maximum number of records to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 4999
+            default: 100
+        - name: offset
+          in: query
+          description: Number of records to skip (for pagination)
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Profile data retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileQueryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/UnprocessableEntity'
+
+  /api/v1/profile/{dataModelName}/{id}:
+    get:
+      operationId: getProfileById
+      summary: Get Profile by ID
+      description: |
+        Retrieves a specific profile record by its unique identifier.
+        Supports both primary and secondary key lookups.
+      tags:
+        - Profile API
+      parameters:
+        - $ref: '#/components/parameters/dataModelName'
+        - $ref: '#/components/parameters/recordId'
+        - name: fields
+          in: query
+          description: Comma-separated list of fields to return
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Profile record retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileRecordResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/profile/{dataModelName}/{id}/{childDataModelName}:
+    get:
+      operationId: getProfileWithChildren
+      summary: Get Profile with Child Data
+      description: |
+        Retrieves profile data along with related child objects, supporting
+        hierarchical data access patterns.
+      tags:
+        - Profile API
+      parameters:
+        - $ref: '#/components/parameters/dataModelName'
+        - $ref: '#/components/parameters/recordId'
+        - name: childDataModelName
+          in: path
+          required: true
+          description: Name of the child data model object
+          schema:
+            type: string
+          example: "UnifiedContactPointEmail__dlm"
+        - name: fields
+          in: query
+          description: Comma-separated list of fields to return from child objects
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Profile with child data retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileWithChildrenResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/profile/{dataModelName}/{id}/calculated-insights/{ciName}:
+    get:
+      operationId: getProfileCalculatedInsights
+      summary: Get Profile Calculated Insights
+      description: |
+        Retrieves calculated insights for a specific profile record.
+        Returns computed attributes and metrics associated with the profile.
+      tags:
+        - Profile API
+      parameters:
+        - $ref: '#/components/parameters/dataModelName'
+        - $ref: '#/components/parameters/recordId'
+        - $ref: '#/components/parameters/ciName'
+      responses:
+        '200':
+          description: Profile calculated insights retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileInsightsResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ============================================================================
+  # Metadata API Endpoints
+  # ============================================================================
+  /api/v1/metadata/:
+    get:
+      operationId: getAllMetadata
+      summary: Get All Entity Metadata
+      description: |
+        Retrieves metadata about all entities including Calculated Insights,
+        Engagement, Profile, and other entities, along with their relationships.
+
+        For Data Lake Objects and Data Model Objects, includes information about
+        key qualifier fields.
+      tags:
+        - Metadata API
+      parameters:
+        - name: entityType
+          in: query
+          description: Filter by entity type
+          schema:
+            type: string
+            enum:
+              - DataLakeObject
+              - DataModelObject
+              - CalculatedInsight
+        - name: entityCategory
+          in: query
+          description: Filter by entity category (not applicable for CalculatedInsight)
+          schema:
+            type: string
+            enum:
+              - Profile
+              - Engagement
+              - Related
+        - name: entityName
+          in: query
+          description: Filter by specific entity name
+          schema:
+            type: string
+          example: "UnifiedIndividual__dlm"
+      responses:
+        '200':
+          description: Metadata retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataResponse'
+              example:
+                metadata:
+                  - name: "UnifiedIndividual__dlm"
+                    displayName: "Unified Individual"
+                    category: "Profile"
+                    fields:
+                      - name: "Id__c"
+                        displayName: "Record ID"
+                        type: "STRING"
+                        keyQualifier: null
+                      - name: "FirstName__c"
+                        displayName: "First Name"
+                        type: "STRING"
+                        keyQualifier: "DataSource__c"
+                    indexes:
+                      - name: "primary"
+                        fields: ["Id__c"]
+                    primaryKeys:
+                      - name: "Id__c"
+                    relationships:
+                      - name: "ContactPointEmails"
+                        relatedEntity: "UnifiedContactPointEmail__dlm"
+                        type: "ONE_TO_MANY"
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ============================================================================
+  # Calculated Insights API Endpoints
+  # ============================================================================
+  /api/v1/insight/metadata:
+    get:
+      operationId: getInsightsMetadata
+      summary: Get All Calculated Insights Metadata
+      description: |
+        Retrieves metadata for all available calculated insights, including
+        dimensions, measures, and relationships.
+      tags:
+        - Calculated Insights API
+      responses:
+        '200':
+          description: Insights metadata retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightsMetadataResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/insight/metadata/{ciName}:
+    get:
+      operationId: getInsightMetadataByName
+      summary: Get Calculated Insight Metadata
+      description: |
+        Retrieves detailed metadata for a specific calculated insight,
+        including available dimensions, measures, and relationships.
+      tags:
+        - Calculated Insights API
+      parameters:
+        - $ref: '#/components/parameters/ciName'
+      responses:
+        '200':
+          description: Insight metadata retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightMetadataResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/insight/calculated-insights/{ciName}:
+    get:
+      operationId: queryCalculatedInsight
+      summary: Query Calculated Insight
+      description: |
+        Query a specific calculated insight with customizable dimensions,
+        measures, filters, and time-based aggregation.
+
+        **Features:**
+        - Filter by dimension values
+        - Aggregate by time granularity (HOUR, DAY, MONTH, QUARTER, YEAR)
+        - Sort by multiple fields
+        - Pagination support
+      tags:
+        - Calculated Insights API
+      parameters:
+        - $ref: '#/components/parameters/ciName'
+        - name: dimensions
+          in: query
+          description: Comma-separated list of dimensions to include
+          schema:
+            type: string
+          example: "Region__c,ProductCategory__c"
+        - name: measures
+          in: query
+          description: Comma-separated list of measures to include
+          schema:
+            type: string
+          example: "TotalRevenue__c,OrderCount__c"
+        - name: filters
+          in: query
+          description: Filter criteria for dimensions
+          schema:
+            type: string
+          example: "Region__c=West,Year__c=2024"
+        - name: timeAggregation
+          in: query
+          description: Time granularity for aggregation
+          schema:
+            type: string
+            enum:
+              - HOUR
+              - DAY
+              - MONTH
+              - QUARTER
+              - YEAR
+        - name: orderBy
+          in: query
+          description: Fields to sort by (prefix with - for descending)
+          schema:
+            type: string
+          example: "-TotalRevenue__c,Region__c"
+        - name: limit
+          in: query
+          description: Maximum number of records to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 4999
+            default: 100
+        - name: offset
+          in: query
+          description: Number of records to skip
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Calculated insight data retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightQueryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ============================================================================
+  # Data Graph API Endpoints
+  # ============================================================================
+  /api/v1/dataGraph/metadata:
+    get:
+      operationId: getDataGraphMetadata
+      summary: Get Data Graph Metadata
+      description: |
+        Retrieves metadata for all accessible data graph objects, including
+        primary data model objects, related objects, and their fields.
+      tags:
+        - Data Graph API
+      parameters:
+        - name: dataGraphName
+          in: query
+          description: Filter by specific data graph name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Data graph metadata retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataGraphMetadataResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/dataGraph/{dataGraphEntityName}/{id}:
+    get:
+      operationId: getDataGraphById
+      summary: Get Data Graph Record by ID
+      description: |
+        Retrieves a specific record from a data graph by its unique identifier.
+        Returns complete record data including all related fields.
+      tags:
+        - Data Graph API
+      parameters:
+        - name: dataGraphEntityName
+          in: path
+          required: true
+          description: Name of the data graph entity
+          schema:
+            type: string
+          example: "CustomerProfile_dg"
+        - $ref: '#/components/parameters/recordId'
+        - name: live
+          in: query
+          description: |
+            Set to true for real-time data (higher latency, higher credit consumption).
+            Default is false for precalculated data.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Data graph record retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataGraphRecordResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/dataGraph/{dataGraphEntityName}:
+    get:
+      operationId: queryDataGraphByLookupKeys
+      summary: Query Data Graph by Lookup Keys
+      description: |
+        Query data graph records using lookup keys from primary or participating
+        data model objects. Supports flexible data retrieval based on various key fields.
+      tags:
+        - Data Graph API
+      parameters:
+        - name: dataGraphEntityName
+          in: path
+          required: true
+          description: Name of the data graph entity
+          schema:
+            type: string
+          example: "CustomerProfile_dg"
+        - name: lookupKeys
+          in: query
+          required: true
+          description: |
+            JSON array of lookup key objects. Each object contains field-value pairs
+            for the lookup.
+          schema:
+            type: string
+          example: '[{"Email__c":"john@example.com"},{"CustomerId__c":"CUST001"}]'
+        - name: live
+          in: query
+          description: Set to true for real-time data
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Data graph records retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataGraphQueryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ============================================================================
+  # Connect REST API - Data Ingestion Endpoints
+  # ============================================================================
+  /services/data/v64.0/ssot/streaming/{streamName}:
+    post:
+      operationId: streamingIngestion
+      summary: Streaming Data Ingestion
+      description: |
+        Ingest records into a specific data stream in real-time. Use this endpoint for
+        low-latency, event-driven data ingestion from external systems, applications, and IoT devices.
+
+        **Limits:**
+        - Maximum payload size: 200 KB
+        - Maximum requests: 250 per second
+
+        **Best Practices:**
+        - Include unique identifiers for idempotency
+        - Use correct data types (dates in ISO 8601 format)
+        - Validate against the stream schema before sending
+      tags:
+        - Connect REST API - Data Ingestion
+      parameters:
+        - name: streamName
+          in: path
+          required: true
+          description: The API name of the target data stream
+          schema:
+            type: string
+          example: "WebEngagement_Stream"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StreamingIngestionRequest'
+            example:
+              data:
+                - EventId__c: "evt_001"
+                  EventType__c: "page_view"
+                  UserId__c: "user_12345"
+                  Timestamp__c: "2024-01-15T10:30:00Z"
+      responses:
+        '200':
+          description: Records ingested successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestionResponse'
+              example:
+                accepted: 2
+                rejected: 0
+                errors: []
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Data stream not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Invalid stream name"
+                errorCode: "STREAM_NOT_FOUND"
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /services/data/v64.0/ssot/streaming-batch/{streamName}:
+    post:
+      operationId: batchIngestion
+      summary: Batch Data Ingestion
+      description: |
+        Ingest large volumes of data into a data stream asynchronously. Use this endpoint
+        for bulk data loads and scheduled imports.
+
+        **Limits:**
+        - Maximum payload size: 150 MB
+        - Maximum files per job: 100
+        - Maximum concurrent jobs: 5
+        - Maximum requests per hour: 20
+        - Job retention: 7 days
+        - Typical processing time: ~3 minutes
+      tags:
+        - Connect REST API - Data Ingestion
+      parameters:
+        - name: streamName
+          in: path
+          required: true
+          description: The API name of the target data stream
+          schema:
+            type: string
+          example: "CustomerData_Stream"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchIngestionRequest'
+      responses:
+        '202':
+          description: Batch accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchIngestionResponse'
+              example:
+                batchId: "batch_abc123"
+                status: "ACCEPTED"
+                recordCount: 50000
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  # ============================================================================
+  # Connect REST API - Data Streams Endpoints
+  # ============================================================================
+  /services/data/v64.0/ssot/data-streams:
+    get:
+      operationId: listDataStreams
+      summary: List Data Streams
+      description: |
+        Retrieve all data streams configured in your org. Data streams define how data
+        enters Data 360 from external sources.
+      tags:
+        - Connect REST API - Data Streams
+      parameters:
+        - name: status
+          in: query
+          description: Filter by stream status
+          schema:
+            type: string
+            enum: [ACTIVE, INACTIVE, ERROR, PENDING]
+        - name: category
+          in: query
+          description: Filter by category
+          schema:
+            type: string
+            enum: [Engagement, Profile, Other]
+        - name: limit
+          in: query
+          description: Maximum records to return
+          schema:
+            type: integer
+            default: 100
+        - name: offset
+          in: query
+          description: Pagination offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Data streams retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataStreamsListResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /services/data/v64.0/ssot/data-streams/{streamName}:
+    get:
+      operationId: getDataStreamDetails
+      summary: Get Data Stream Details
+      description: |
+        Retrieve detailed information about a specific data stream, including
+        schema definition, source configuration, and processing metrics.
+      tags:
+        - Connect REST API - Data Streams
+      parameters:
+        - name: streamName
+          in: path
+          required: true
+          description: The API name of the data stream
+          schema:
+            type: string
+          example: "WebEngagement_Stream"
+      responses:
+        '200':
+          description: Data stream details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataStreamDetailResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /services/data/v64.0/ssot/data-streams/{streamName}/schema:
+    get:
+      operationId: getDataStreamSchema
+      summary: Get Data Stream Schema
+      description: |
+        Retrieve the full schema definition for a data stream, including
+        field definitions, data types, validation rules, and indexes.
+      tags:
+        - Connect REST API - Data Streams
+      parameters:
+        - name: streamName
+          in: path
+          required: true
+          description: The API name of the data stream
+          schema:
+            type: string
+          example: "WebEngagement_Stream"
+      responses:
+        '200':
+          description: Data stream schema retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataStreamSchemaResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /services/data/v64.0/ssot/data-streams/{streamName}/stats:
+    get:
+      operationId: getDataStreamStats
+      summary: Get Data Stream Statistics
+      description: |
+        Retrieve ingestion statistics and health metrics for a data stream,
+        including success rates, error counts, and time-series data.
+      tags:
+        - Connect REST API - Data Streams
+      parameters:
+        - name: streamName
+          in: path
+          required: true
+          description: The API name of the data stream
+          schema:
+            type: string
+          example: "WebEngagement_Stream"
+        - name: startDate
+          in: query
+          description: Start of the date range (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          description: End of the date range (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - name: granularity
+          in: query
+          description: Time granularity for statistics
+          schema:
+            type: string
+            enum: [HOUR, DAY, WEEK, MONTH]
+      responses:
+        '200':
+          description: Data stream statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataStreamStatsResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ============================================================================
+  # Connect REST API - Identity Resolution Endpoints
+  # ============================================================================
+  /services/data/v64.0/ssot/identity-resolution/rules:
+    get:
+      operationId: listIdentityResolutionRules
+      summary: List Identity Resolution Rules
+      description: |
+        Retrieve all configured identity resolution rulesets. Rules define how
+        records are matched and merged into unified customer profiles.
+      tags:
+        - Connect REST API - Identity Resolution
+      parameters:
+        - name: status
+          in: query
+          description: Filter by rule status
+          schema:
+            type: string
+            enum: [ACTIVE, INACTIVE, DRAFT]
+      responses:
+        '200':
+          description: Identity resolution rules retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityResolutionRulesResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /services/data/v64.0/ssot/identity-resolution/rules/{ruleId}:
+    get:
+      operationId: getIdentityResolutionRule
+      summary: Get Identity Resolution Rule
+      description: |
+        Retrieve detailed configuration for a specific identity resolution rule,
+        including match criteria, normalization rules, and survivorship settings.
+      tags:
+        - Connect REST API - Identity Resolution
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          description: The unique identifier of the rule
+          schema:
+            type: string
+          example: "IR001"
+      responses:
+        '200':
+          description: Identity resolution rule retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityResolutionRuleDetailResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /services/data/v64.0/ssot/identity-resolution/jobs:
+    get:
+      operationId: listIdentityResolutionJobs
+      summary: List Identity Resolution Jobs
+      description: |
+        Retrieve the history of identity resolution job runs, including
+        status, statistics, and error information.
+      tags:
+        - Connect REST API - Identity Resolution
+      parameters:
+        - name: status
+          in: query
+          description: Filter by job status
+          schema:
+            type: string
+            enum: [QUEUED, RUNNING, COMPLETED, FAILED, CANCELLED]
+        - name: startDate
+          in: query
+          description: Jobs started after this date
+          schema:
+            type: string
+            format: date-time
+        - name: endDate
+          in: query
+          description: Jobs started before this date
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          description: Maximum results to return
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Identity resolution jobs retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityResolutionJobsResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: triggerIdentityResolutionJob
+      summary: Trigger Identity Resolution Job
+      description: |
+        Manually trigger an identity resolution job to process records
+        and update unified customer profiles.
+      tags:
+        - Connect REST API - Identity Resolution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriggerIdentityResolutionJobRequest'
+            example:
+              type: "INCREMENTAL"
+              rules: ["IR001", "IR002"]
+              priority: "HIGH"
+      responses:
+        '202':
+          description: Job triggered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerIdentityResolutionJobResponse'
+              example:
+                jobId: "JOB_003"
+                status: "QUEUED"
+                estimatedStartTime: "2024-01-15T11:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /services/data/v64.0/ssot/identity-resolution/jobs/{jobId}:
+    get:
+      operationId: getIdentityResolutionJob
+      summary: Get Identity Resolution Job Details
+      description: |
+        Get detailed information about a specific identity resolution job,
+        including configuration, statistics, and error details.
+      tags:
+        - Connect REST API - Identity Resolution
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          description: The unique identifier of the job
+          schema:
+            type: string
+          example: "JOB_001"
+      responses:
+        '200':
+          description: Job details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityResolutionJobDetailResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ============================================================================
+  # Connect REST API - Segments Endpoints
+  # ============================================================================
+  /services/data/v64.0/ssot/segments:
+    get:
+      operationId: listSegments
+      summary: List Segments
+      description: |
+        Retrieve all segments in your org. Segments are dynamic groups of customers
+        based on attributes, behaviors, and calculated insights.
+      tags:
+        - Connect REST API - Segments
+      parameters:
+        - name: status
+          in: query
+          description: Filter by segment status
+          schema:
+            type: string
+            enum: [ACTIVE, INACTIVE, DRAFT, PUBLISHING]
+        - name: type
+          in: query
+          description: Filter by segment type
+          schema:
+            type: string
+            enum: [MANUAL, CALCULATED, IMPORTED]
+        - name: limit
+          in: query
+          description: Maximum results to return
+          schema:
+            type: integer
+            default: 100
+        - name: offset
+          in: query
+          description: Pagination offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Segments retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SegmentsListResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createSegment
+      summary: Create Segment
+      description: |
+        Create a new segment with specified criteria. The segment is created in
+        DRAFT status and must be published to become active.
+      tags:
+        - Connect REST API - Segments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSegmentRequest'
+      responses:
+        '201':
+          description: Segment created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateSegmentResponse'
+              example:
+                id: "SEG_003"
+                name: "Loyal_Mobile_Users"
+                status: "DRAFT"
+                message: "Segment created successfully. Run publish to activate."
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /services/data/v64.0/ssot/segments/{segmentId}:
+    get:
+      operationId: getSegment
+      summary: Get Segment Details
+      description: |
+        Retrieve detailed information about a specific segment, including
+        criteria, membership count, and activation status.
+      tags:
+        - Connect REST API - Segments
+      parameters:
+        - name: segmentId
+          in: path
+          required: true
+          description: The unique identifier of the segment
+          schema:
+            type: string
+          example: "SEG_001"
+      responses:
+        '200':
+          description: Segment details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SegmentDetailResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      operationId: updateSegment
+      summary: Update Segment
+      description: |
+        Update an existing segment's configuration. Changes require republishing
+        to take effect.
+      tags:
+        - Connect REST API - Segments
+      parameters:
+        - name: segmentId
+          in: path
+          required: true
+          description: The unique identifier of the segment
+          schema:
+            type: string
+          example: "SEG_001"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSegmentRequest'
+      responses:
+        '200':
+          description: Segment updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateSegmentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /services/data/v64.0/ssot/segments/{segmentId}/publish:
+    post:
+      operationId: publishSegment
+      summary: Publish Segment
+      description: |
+        Publish a segment to make it active and compute membership.
+        Publishing initiates a background job to calculate segment members.
+      tags:
+        - Connect REST API - Segments
+      parameters:
+        - name: segmentId
+          in: path
+          required: true
+          description: The unique identifier of the segment
+          schema:
+            type: string
+          example: "SEG_001"
+      responses:
+        '202':
+          description: Segment publish initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublishSegmentResponse'
+              example:
+                id: "SEG_001"
+                status: "PUBLISHING"
+                jobId: "PUB_001"
+                message: "Segment publishing initiated"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /services/data/v64.0/ssot/segments/{segmentId}/members:
+    get:
+      operationId: getSegmentMembers
+      summary: Get Segment Members
+      description: |
+        Retrieve the members (unified profile IDs) of a segment with optional
+        profile fields.
+      tags:
+        - Connect REST API - Segments
+      parameters:
+        - name: segmentId
+          in: path
+          required: true
+          description: The unique identifier of the segment
+          schema:
+            type: string
+          example: "SEG_001"
+        - name: limit
+          in: query
+          description: Maximum members to return
+          schema:
+            type: integer
+            default: 1000
+            maximum: 10000
+        - name: offset
+          in: query
+          description: Pagination offset
+          schema:
+            type: integer
+            default: 0
+        - name: fields
+          in: query
+          description: Comma-separated list of profile fields to include
+          schema:
+            type: string
+          example: "unifiedId,email,lifetimeValue"
+      responses:
+        '200':
+          description: Segment members retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SegmentMembersResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ============================================================================
+  # Connect REST API - Activations Endpoints
+  # ============================================================================
+  /services/data/v64.0/ssot/activation-targets:
+    get:
+      operationId: listActivationTargets
+      summary: List Activation Targets
+      description: |
+        Retrieve all configured activation targets. Activation targets are
+        external platforms where segment data can be exported.
+      tags:
+        - Connect REST API - Activations
+      parameters:
+        - name: status
+          in: query
+          description: Filter by target status
+          schema:
+            type: string
+            enum: [ACTIVE, INACTIVE, ERROR]
+        - name: type
+          in: query
+          description: Filter by target type
+          schema:
+            type: string
+            enum: [ADVERTISING, MARKETING, ANALYTICS, CLOUD_STORAGE]
+        - name: limit
+          in: query
+          description: Maximum results to return
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Activation targets retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivationTargetsListResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /services/data/v64.0/ssot/activation-targets/{targetId}:
+    get:
+      operationId: getActivationTarget
+      summary: Get Activation Target Details
+      description: |
+        Retrieve detailed configuration for a specific activation target,
+        including connection settings, field mappings, and sync statistics.
+      tags:
+        - Connect REST API - Activations
+      parameters:
+        - name: targetId
+          in: path
+          required: true
+          description: The unique identifier of the activation target
+          schema:
+            type: string
+          example: "ACT_001"
+      responses:
+        '200':
+          description: Activation target details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivationTargetDetailResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /services/data/v64.0/ssot/activations:
+    get:
+      operationId: listActivations
+      summary: List Activations
+      description: |
+        Retrieve all segment-to-target activations. Activations define how
+        segment data is exported to activation targets.
+      tags:
+        - Connect REST API - Activations
+      parameters:
+        - name: segmentId
+          in: query
+          description: Filter by segment
+          schema:
+            type: string
+        - name: targetId
+          in: query
+          description: Filter by activation target
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter by status
+          schema:
+            type: string
+            enum: [ACTIVE, PAUSED, ERROR]
+      responses:
+        '200':
+          description: Activations retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivationsListResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createActivation
+      summary: Create Activation
+      description: |
+        Create a new activation to sync a segment to an activation target.
+      tags:
+        - Connect REST API - Activations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateActivationRequest'
+      responses:
+        '201':
+          description: Activation created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateActivationResponse'
+              example:
+                id: "ACTV_003"
+                status: "PENDING"
+                message: "Activation created. Initial sync will begin at scheduled time."
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /services/data/v64.0/ssot/activations/{activationId}/sync:
+    post:
+      operationId: triggerActivationSync
+      summary: Trigger Activation Sync
+      description: |
+        Manually trigger an immediate sync for an activation. Useful for
+        testing or urgent data updates.
+      tags:
+        - Connect REST API - Activations
+      parameters:
+        - name: activationId
+          in: path
+          required: true
+          description: The unique identifier of the activation
+          schema:
+            type: string
+          example: "ACTV_001"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriggerSyncRequest'
+            example:
+              syncType: "INCREMENTAL"
+              priority: "HIGH"
+      responses:
+        '202':
+          description: Sync triggered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerSyncResponse'
+              example:
+                activationId: "ACTV_001"
+                syncJobId: "SYNC_001"
+                status: "RUNNING"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ============================================================================
+  # Universal ID Lookup Endpoint
+  # ============================================================================
+  /api/v1/universalIdLookup/{entityName}/{dataSourceId}/{dataSourceObjectId}/{sourceRecordId}:
+    get:
+      operationId: lookupUniversalId
+      summary: Universal ID Lookup
+      description: |
+        Retrieve all individual records associated with a unified record across
+        all data sources. Find all individual IDs for a person across various
+        systems like retail sales, loyalty programs, and mobile identity platforms.
+
+        **Use Cases:**
+        - Customer profile consolidation
+        - Cross-system data integration
+        - Identity resolution across platforms
+      tags:
+        - Universal ID Lookup
+      parameters:
+        - name: entityName
+          in: path
+          required: true
+          description: Name of the unified entity (e.g., UnifiedIndividual__dlm)
+          schema:
+            type: string
+          example: "UnifiedIndividual__dlm"
+        - name: dataSourceId
+          in: path
+          required: true
+          description: ID of the data source
+          schema:
+            type: string
+          example: "DS001"
+        - name: dataSourceObjectId
+          in: path
+          required: true
+          description: ID of the data source object
+          schema:
+            type: string
+          example: "Contact"
+        - name: sourceRecordId
+          in: path
+          required: true
+          description: ID of the source record
+          schema:
+            type: string
+          example: "003ABC123"
+        - name: fields
+          in: query
+          description: Comma-separated list of fields to return
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Universal ID lookup successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UniversalIdLookupResponse'
+              example:
+                unifiedId: "UI001ABC"
+                relatedRecords:
+                  - dataSourceId: "DS001"
+                    dataSourceObjectId: "Contact"
+                    sourceRecordId: "003ABC123"
+                    dataSourceName: "Sales Cloud"
+                  - dataSourceId: "DS002"
+                    dataSourceObjectId: "LoyaltyMember"
+                    sourceRecordId: "LM789"
+                    dataSourceName: "Loyalty System"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        OAuth 2.0 access token obtained via Client Credentials Flow.
+
+        Include the token in the Authorization header:
+        ```
+        Authorization: Bearer {access_token}
+        ```
+
+  parameters:
+    queryId:
+      name: queryId
+      in: path
+      required: true
+      description: Unique identifier for the query
+      schema:
+        type: string
+      example: "0Xx000000000001AAA"
+
+    dataModelName:
+      name: dataModelName
+      in: path
+      required: true
+      description: Name of the data model object
+      schema:
+        type: string
+      example: "UnifiedIndividual__dlm"
+
+    recordId:
+      name: id
+      in: path
+      required: true
+      description: Unique identifier for the record
+      schema:
+        type: string
+      example: "001ABC123DEF"
+
+    ciName:
+      name: ciName
+      in: path
+      required: true
+      description: Name of the calculated insight
+      schema:
+        type: string
+      example: "CustomerLifetimeValue"
+
+  schemas:
+    # Query API Schemas
+    SqlQueryRequest:
+      type: object
+      required:
+        - sql
+      properties:
+        sql:
+          type: string
+          description: SQL query to execute
+          example: "SELECT Id__c, FirstName__c FROM UnifiedIndividual__dlm LIMIT 100"
+
+    SqlQueryResponse:
+      type: object
+      properties:
+        queryId:
+          type: string
+          description: Unique identifier for the query
+        done:
+          type: boolean
+          description: Whether query execution is complete
+        state:
+          type: string
+          enum: [RUNNING, COMPLETED, FAILED, CANCELLED]
+          description: Current state of the query
+        metadata:
+          $ref: '#/components/schemas/QueryMetadata'
+        rowCount:
+          type: integer
+          description: Total number of rows returned
+        data:
+          type: array
+          items:
+            type: array
+            items: {}
+          description: Query results as array of row arrays
+
+    SqlQueryAsyncResponse:
+      type: object
+      properties:
+        queryId:
+          type: string
+          description: Unique identifier for tracking the query
+        done:
+          type: boolean
+          description: Always false for async response
+        state:
+          type: string
+          enum: [RUNNING]
+          description: Query is running asynchronously
+
+    SqlQueryStatusResponse:
+      type: object
+      properties:
+        queryId:
+          type: string
+        done:
+          type: boolean
+        state:
+          type: string
+          enum: [RUNNING, COMPLETED, FAILED, CANCELLED]
+        metadata:
+          $ref: '#/components/schemas/QueryMetadata'
+        error:
+          type: string
+          description: Error message if query failed
+
+    SqlQueryRowsResponse:
+      type: object
+      properties:
+        queryId:
+          type: string
+        done:
+          type: boolean
+        rowCount:
+          type: integer
+        offset:
+          type: integer
+        nextBatchId:
+          type: string
+          description: ID for retrieving next batch of results
+        data:
+          type: array
+          items:
+            type: array
+            items: {}
+
+    QueryMetadata:
+      type: object
+      properties:
+        columns:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              type:
+                type: string
+        rowCount:
+          type: integer
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+
+    # Profile API Schemas
+    ProfileMetadataResponse:
+      type: object
+      properties:
+        metadata:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityMetadata'
+
+    ProfileModelMetadataResponse:
+      type: object
+      properties:
+        name:
+          type: string
+        displayName:
+          type: string
+        category:
+          type: string
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldMetadata'
+        indexes:
+          type: array
+          items:
+            $ref: '#/components/schemas/IndexMetadata'
+
+    ProfileQueryResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        totalCount:
+          type: integer
+        offset:
+          type: integer
+        limit:
+          type: integer
+
+    ProfileRecordResponse:
+      type: object
+      additionalProperties: true
+
+    ProfileWithChildrenResponse:
+      type: object
+      properties:
+        parent:
+          type: object
+          additionalProperties: true
+        children:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    ProfileInsightsResponse:
+      type: object
+      properties:
+        profileId:
+          type: string
+        insights:
+          type: object
+          additionalProperties: true
+
+    # Metadata API Schemas
+    MetadataResponse:
+      type: object
+      properties:
+        metadata:
+          type: array
+          items:
+            $ref: '#/components/schemas/EntityMetadata'
+
+    EntityMetadata:
+      type: object
+      properties:
+        name:
+          type: string
+        displayName:
+          type: string
+        category:
+          type: string
+          enum: [Profile, Engagement, Related, CalculatedInsight]
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldMetadata'
+        indexes:
+          type: array
+          items:
+            $ref: '#/components/schemas/IndexMetadata'
+        primaryKeys:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+        relationships:
+          type: array
+          items:
+            $ref: '#/components/schemas/RelationshipMetadata'
+
+    FieldMetadata:
+      type: object
+      properties:
+        name:
+          type: string
+        displayName:
+          type: string
+        type:
+          type: string
+          enum: [STRING, INTEGER, DOUBLE, BOOLEAN, DATE, DATETIME, TIMESTAMP]
+        keyQualifier:
+          type: string
+          nullable: true
+
+    IndexMetadata:
+      type: object
+      properties:
+        name:
+          type: string
+        fields:
+          type: array
+          items:
+            type: string
+
+    RelationshipMetadata:
+      type: object
+      properties:
+        name:
+          type: string
+        relatedEntity:
+          type: string
+        type:
+          type: string
+          enum: [ONE_TO_ONE, ONE_TO_MANY, MANY_TO_MANY]
+
+    # Calculated Insights Schemas
+    InsightsMetadataResponse:
+      type: object
+      properties:
+        insights:
+          type: array
+          items:
+            $ref: '#/components/schemas/InsightMetadata'
+
+    InsightMetadataResponse:
+      $ref: '#/components/schemas/InsightMetadata'
+
+    InsightMetadata:
+      type: object
+      properties:
+        name:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        dimensions:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              displayName:
+                type: string
+              type:
+                type: string
+        measures:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              displayName:
+                type: string
+              type:
+                type: string
+              aggregation:
+                type: string
+                enum: [SUM, AVG, COUNT, MIN, MAX]
+
+    InsightQueryResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        totalCount:
+          type: integer
+        offset:
+          type: integer
+        limit:
+          type: integer
+
+    # Data Graph Schemas
+    DataGraphMetadataResponse:
+      type: object
+      properties:
+        dataGraphs:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              displayName:
+                type: string
+              primaryObject:
+                type: string
+              relatedObjects:
+                type: array
+                items:
+                  type: string
+              fields:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FieldMetadata'
+
+    DataGraphRecordResponse:
+      type: object
+      additionalProperties: true
+
+    DataGraphQueryResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    # Universal ID Lookup Schemas
+    UniversalIdLookupResponse:
+      type: object
+      properties:
+        unifiedId:
+          type: string
+          description: The unified identifier for the entity
+        relatedRecords:
+          type: array
+          items:
+            type: object
+            properties:
+              dataSourceId:
+                type: string
+              dataSourceObjectId:
+                type: string
+              sourceRecordId:
+                type: string
+              dataSourceName:
+                type: string
+
+    # Connect REST API - Data Ingestion Schemas
+    StreamingIngestionRequest:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          description: Array of records to ingest
+          items:
+            type: object
+            additionalProperties: true
+          maxItems: 10000
+
+    BatchIngestionRequest:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          description: Array of records to ingest (up to 100,000 per batch)
+          items:
+            type: object
+            additionalProperties: true
+
+    IngestionResponse:
+      type: object
+      properties:
+        accepted:
+          type: integer
+          description: Number of records accepted
+        rejected:
+          type: integer
+          description: Number of records rejected
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              index:
+                type: integer
+              errorCode:
+                type: string
+              message:
+                type: string
+
+    BatchIngestionResponse:
+      type: object
+      properties:
+        batchId:
+          type: string
+          description: Unique identifier for the batch job
+        status:
+          type: string
+          enum: [ACCEPTED, PROCESSING, COMPLETED, FAILED]
+        recordCount:
+          type: integer
+          description: Total number of records in the batch
+
+    # Connect REST API - Data Streams Schemas
+    DataStreamsListResponse:
+      type: object
+      properties:
+        dataStreams:
+          type: array
+          items:
+            $ref: '#/components/schemas/DataStreamSummary'
+        totalCount:
+          type: integer
+        offset:
+          type: integer
+        limit:
+          type: integer
+
+    DataStreamSummary:
+      type: object
+      properties:
+        name:
+          type: string
+        displayName:
+          type: string
+        category:
+          type: string
+          enum: [Engagement, Profile, Other]
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, ERROR, PENDING]
+        sourceType:
+          type: string
+        createdDate:
+          type: string
+          format: date-time
+        lastModifiedDate:
+          type: string
+          format: date-time
+        recordCount:
+          type: integer
+
+    DataStreamDetailResponse:
+      type: object
+      properties:
+        name:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        status:
+          type: string
+        sourceType:
+          type: string
+        schema:
+          type: object
+          properties:
+            fields:
+              type: array
+              items:
+                $ref: '#/components/schemas/StreamFieldDefinition'
+        metrics:
+          type: object
+          properties:
+            recordCount:
+              type: integer
+            lastIngestionTime:
+              type: string
+              format: date-time
+            averageRecordsPerDay:
+              type: integer
+            errorRate:
+              type: number
+
+    StreamFieldDefinition:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [STRING, INTEGER, DOUBLE, BOOLEAN, DATE, DATETIME, DECIMAL]
+        required:
+          type: boolean
+        primaryKey:
+          type: boolean
+
+    DataStreamSchemaResponse:
+      type: object
+      properties:
+        streamName:
+          type: string
+        version:
+          type: string
+        fields:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              displayName:
+                type: string
+              type:
+                type: string
+              length:
+                type: integer
+              required:
+                type: boolean
+              primaryKey:
+                type: boolean
+              description:
+                type: string
+              allowedValues:
+                type: array
+                items:
+                  type: string
+        indexes:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              fields:
+                type: array
+                items:
+                  type: string
+              type:
+                type: string
+                enum: [PRIMARY, SECONDARY]
+
+    DataStreamStatsResponse:
+      type: object
+      properties:
+        streamName:
+          type: string
+        period:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date-time
+            end:
+              type: string
+              format: date-time
+        summary:
+          type: object
+          properties:
+            totalRecords:
+              type: integer
+            successfulRecords:
+              type: integer
+            failedRecords:
+              type: integer
+            successRate:
+              type: number
+        timeSeries:
+          type: array
+          items:
+            type: object
+            properties:
+              timestamp:
+                type: string
+                format: date-time
+              recordCount:
+                type: integer
+              successCount:
+                type: integer
+              errorCount:
+                type: integer
+        topErrors:
+          type: array
+          items:
+            type: object
+            properties:
+              errorCode:
+                type: string
+              count:
+                type: integer
+              sampleMessage:
+                type: string
+
+    # Connect REST API - Identity Resolution Schemas
+    IdentityResolutionRulesResponse:
+      type: object
+      properties:
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdentityResolutionRuleSummary'
+
+    IdentityResolutionRuleSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        displayName:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, DRAFT]
+        priority:
+          type: integer
+        matchCriteria:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              matchType:
+                type: string
+                enum: [EXACT, NORMALIZED, FUZZY, PHONETIC]
+              fuzzyThreshold:
+                type: number
+                nullable: true
+        createdDate:
+          type: string
+          format: date-time
+        lastModifiedDate:
+          type: string
+          format: date-time
+
+    IdentityResolutionRuleDetailResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        priority:
+          type: integer
+        matchCriteria:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              displayName:
+                type: string
+              matchType:
+                type: string
+              normalization:
+                type: string
+              required:
+                type: boolean
+        reconciliationRules:
+          type: object
+          properties:
+            survivorship:
+              type: object
+              properties:
+                defaultRule:
+                  type: string
+                  enum: [MOST_RECENT, MOST_COMPLETE, SOURCE_PRIORITY, AGGREGATE]
+                fieldOverrides:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      field:
+                        type: string
+                      rule:
+                        type: string
+        statistics:
+          type: object
+          properties:
+            totalMatches:
+              type: integer
+            lastRunDate:
+              type: string
+              format: date-time
+            averageClusterSize:
+              type: number
+
+    IdentityResolutionJobsResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdentityResolutionJobSummary'
+        totalCount:
+          type: integer
+
+    IdentityResolutionJobSummary:
+      type: object
+      properties:
+        jobId:
+          type: string
+        type:
+          type: string
+          enum: [FULL_RECONCILIATION, INCREMENTAL]
+        status:
+          type: string
+          enum: [QUEUED, RUNNING, COMPLETED, FAILED, CANCELLED]
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+          nullable: true
+        statistics:
+          type: object
+          properties:
+            recordsProcessed:
+              type: integer
+            newMatches:
+              type: integer
+            updatedProfiles:
+              type: integer
+              nullable: true
+            mergedProfiles:
+              type: integer
+              nullable: true
+            errorCount:
+              type: integer
+
+    TriggerIdentityResolutionJobRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [FULL_RECONCILIATION, INCREMENTAL]
+        rules:
+          type: array
+          items:
+            type: string
+          description: List of rule IDs to apply
+        dataSources:
+          type: array
+          items:
+            type: string
+          description: List of data sources to include
+        priority:
+          type: string
+          enum: [LOW, NORMAL, HIGH]
+
+    TriggerIdentityResolutionJobResponse:
+      type: object
+      properties:
+        jobId:
+          type: string
+        status:
+          type: string
+          enum: [QUEUED, RUNNING]
+        estimatedStartTime:
+          type: string
+          format: date-time
+        message:
+          type: string
+
+    IdentityResolutionJobDetailResponse:
+      type: object
+      properties:
+        jobId:
+          type: string
+        type:
+          type: string
+        status:
+          type: string
+        triggeredBy:
+          type: string
+          enum: [SCHEDULED, MANUAL, API]
+        startTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
+          nullable: true
+        duration:
+          type: string
+        configuration:
+          type: object
+          properties:
+            rulesApplied:
+              type: array
+              items:
+                type: string
+            dataSourcesIncluded:
+              type: array
+              items:
+                type: string
+        statistics:
+          type: object
+          properties:
+            inputRecords:
+              type: integer
+            recordsProcessed:
+              type: integer
+            newMatches:
+              type: integer
+            updatedProfiles:
+              type: integer
+            mergedProfiles:
+              type: integer
+            splitProfiles:
+              type: integer
+            errorCount:
+              type: integer
+            processingRate:
+              type: integer
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              errorCode:
+                type: string
+              count:
+                type: integer
+              sampleRecordIds:
+                type: array
+                items:
+                  type: string
+
+    # Connect REST API - Segments Schemas
+    SegmentsListResponse:
+      type: object
+      properties:
+        segments:
+          type: array
+          items:
+            $ref: '#/components/schemas/SegmentSummary'
+        totalCount:
+          type: integer
+        offset:
+          type: integer
+        limit:
+          type: integer
+
+    SegmentSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, DRAFT, PUBLISHING]
+        type:
+          type: string
+          enum: [MANUAL, CALCULATED, IMPORTED]
+        memberCount:
+          type: integer
+        createdDate:
+          type: string
+          format: date-time
+        lastRefreshedDate:
+          type: string
+          format: date-time
+        publishStatus:
+          type: string
+
+    SegmentDetailResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        type:
+          type: string
+        criteria:
+          $ref: '#/components/schemas/SegmentCriteria'
+        memberCount:
+          type: integer
+        refreshSchedule:
+          type: object
+          properties:
+            frequency:
+              type: string
+              enum: [HOURLY, DAILY, WEEKLY, MONTHLY]
+            time:
+              type: string
+        activations:
+          type: array
+          items:
+            type: object
+            properties:
+              targetId:
+                type: string
+              targetName:
+                type: string
+              status:
+                type: string
+              lastSyncDate:
+                type: string
+                format: date-time
+        createdDate:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        lastModifiedDate:
+          type: string
+          format: date-time
+        lastRefreshedDate:
+          type: string
+          format: date-time
+
+    SegmentCriteria:
+      type: object
+      properties:
+        container:
+          type: object
+          properties:
+            operator:
+              type: string
+              enum: [AND, OR]
+            conditions:
+              type: array
+              items:
+                $ref: '#/components/schemas/SegmentCondition'
+
+    SegmentCondition:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [ATTRIBUTE, BEHAVIOR, SEGMENT]
+        field:
+          type: string
+        operator:
+          type: string
+          enum: [EQUALS, NOT_EQUALS, GREATER_THAN, GREATER_THAN_OR_EQUAL, LESS_THAN, LESS_THAN_OR_EQUAL, CONTAINS, STARTS_WITH, IN, NOT_IN, IS_NULL, IS_NOT_NULL, WITHIN_LAST, WITHIN_NEXT, BEFORE, AFTER, BETWEEN]
+        value:
+          oneOf:
+            - type: string
+            - type: number
+            - type: boolean
+            - type: array
+              items: {}
+        unit:
+          type: string
+          enum: [DAYS, WEEKS, MONTHS, YEARS]
+
+    CreateSegmentRequest:
+      type: object
+      required:
+        - name
+        - criteria
+      properties:
+        name:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        criteria:
+          $ref: '#/components/schemas/SegmentCriteria'
+        refreshSchedule:
+          type: object
+          properties:
+            frequency:
+              type: string
+            time:
+              type: string
+
+    CreateSegmentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        message:
+          type: string
+
+    UpdateSegmentRequest:
+      type: object
+      properties:
+        displayName:
+          type: string
+        description:
+          type: string
+        criteria:
+          $ref: '#/components/schemas/SegmentCriteria'
+        refreshSchedule:
+          type: object
+          properties:
+            frequency:
+              type: string
+            time:
+              type: string
+
+    UpdateSegmentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        message:
+          type: string
+
+    PublishSegmentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        jobId:
+          type: string
+        estimatedCompletionTime:
+          type: string
+          format: date-time
+        message:
+          type: string
+
+    SegmentMembersResponse:
+      type: object
+      properties:
+        segmentId:
+          type: string
+        memberCount:
+          type: integer
+        members:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        offset:
+          type: integer
+        limit:
+          type: integer
+        hasMore:
+          type: boolean
+
+    # Connect REST API - Activations Schemas
+    ActivationTargetsListResponse:
+      type: object
+      properties:
+        activationTargets:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivationTargetSummary'
+        totalCount:
+          type: integer
+
+    ActivationTargetSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        displayName:
+          type: string
+        type:
+          type: string
+          enum: [ADVERTISING, MARKETING, ANALYTICS, CLOUD_STORAGE]
+        platform:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, ERROR]
+        connectedDate:
+          type: string
+          format: date-time
+        lastSyncDate:
+          type: string
+          format: date-time
+        activeSegments:
+          type: integer
+
+    ActivationTargetDetailResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        displayName:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+        platform:
+          type: string
+        status:
+          type: string
+        configuration:
+          type: object
+          additionalProperties: true
+        fieldMappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldMapping'
+        syncSchedule:
+          type: object
+          properties:
+            frequency:
+              type: string
+            time:
+              type: string
+        segments:
+          type: array
+          items:
+            type: object
+            properties:
+              segmentId:
+                type: string
+              segmentName:
+                type: string
+              status:
+                type: string
+              lastSyncDate:
+                type: string
+                format: date-time
+              membersSynced:
+                type: integer
+        statistics:
+          type: object
+          properties:
+            totalRecordsSynced:
+              type: integer
+            lastSyncDuration:
+              type: string
+            averageMatchRate:
+              type: number
+
+    FieldMapping:
+      type: object
+      properties:
+        sourceField:
+          type: string
+        destinationField:
+          type: string
+        transformation:
+          type: string
+
+    ActivationsListResponse:
+      type: object
+      properties:
+        activations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActivationSummary'
+        totalCount:
+          type: integer
+
+    ActivationSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        segmentId:
+          type: string
+        segmentName:
+          type: string
+        targetId:
+          type: string
+        targetName:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, PAUSED, ERROR]
+        syncStatus:
+          type: string
+          enum: [SUCCESS, FAILED, RUNNING]
+        lastSyncDate:
+          type: string
+          format: date-time
+        membersSynced:
+          type: integer
+        matchRate:
+          type: number
+
+    CreateActivationRequest:
+      type: object
+      required:
+        - segmentId
+        - targetId
+      properties:
+        segmentId:
+          type: string
+        targetId:
+          type: string
+        fieldMappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldMapping'
+        syncSchedule:
+          type: object
+          properties:
+            frequency:
+              type: string
+              enum: [HOURLY, DAILY, WEEKLY]
+            time:
+              type: string
+        options:
+          type: object
+          properties:
+            includeNewMembers:
+              type: boolean
+            removeExitedMembers:
+              type: boolean
+
+    CreateActivationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        message:
+          type: string
+
+    TriggerSyncRequest:
+      type: object
+      properties:
+        syncType:
+          type: string
+          enum: [FULL, INCREMENTAL, ADDITIONS_ONLY, REMOVALS_ONLY]
+        priority:
+          type: string
+          enum: [LOW, NORMAL, HIGH]
+
+    TriggerSyncResponse:
+      type: object
+      properties:
+        activationId:
+          type: string
+        syncJobId:
+          type: string
+        status:
+          type: string
+          enum: [QUEUED, RUNNING]
+        estimatedCompletionTime:
+          type: string
+          format: date-time
+
+    # Error Schemas
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+        errorCode:
+          type: string
+          description: Machine-readable error code for programmatic handling
+        details:
+          type: string
+          description: Additional error details when available
+
+  responses:
+    BadRequest:
+      description: Invalid request - malformed or invalid parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Invalid SQL syntax"
+            errorCode: "INVALID_REQUEST"
+            details: "Unexpected token at position 15"
+
+    Forbidden:
+      description: Authorization failed - invalid credentials or insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Insufficient permissions to access this resource"
+            errorCode: "AUTHORIZATION_FAILED"
+
+    NotFound:
+      description: Requested resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Query not found"
+            errorCode: "RESOURCE_NOT_FOUND"
+
+    UnprocessableEntity:
+      description: Invalid attribute - field name does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Field 'InvalidField__c' does not exist on entity"
+            errorCode: "INVALID_ATTRIBUTE"
+
+    TooManyRequests:
+      description: Rate limit exceeded - too many requests in given time period
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Rate limit exceeded. Maximum 15 concurrent requests allowed."
+            errorCode: "RATE_LIMIT_EXCEEDED"
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "An unexpected error occurred"
+            errorCode: "INTERNAL_ERROR"

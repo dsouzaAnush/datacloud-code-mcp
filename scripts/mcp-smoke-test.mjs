@@ -7,7 +7,7 @@ const userId = process.env.USER_ID || "default";
 
 const client = new Client({
   name: "datacloud-mcp-smoke-test",
-  version: "0.1.0"
+  version: "0.2.0"
 });
 
 const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
@@ -25,52 +25,88 @@ function extractText(result) {
 try {
   await client.connect(transport);
 
+  // 1. List tools
   const tools = await client.listTools();
-  const auth = await client.callTool({ name: "auth_status", arguments: {} });
-  const search = await client.callTool({
-    name: "search",
-    arguments: { query: "data cloud sql query", limit: 5 }
-  });
+  const toolNames = tools.tools.map((tool) => tool.name).sort();
+  console.log("tools:", toolNames);
 
-  let readExecute = null;
-  let executeError = null;
-  const authText = extractText(auth);
+  // 2. Auth status
+  const auth = await client.callTool({ name: "auth_status", arguments: {} });
+  console.log("auth_status:", extractText(auth)?.slice(0, 200));
+
+  // 3. Search — find segment endpoints by tag
+  const searchResult = await client.callTool({
+    name: "search",
+    arguments: {
+      code: `async () => {
+        const results = [];
+        for (const [path, methods] of Object.entries(spec.paths)) {
+          for (const [method, op] of Object.entries(methods)) {
+            if (op.tags?.some(t => t.toLowerCase().includes('segment'))) {
+              results.push({ method: method.toUpperCase(), path, summary: op.summary });
+            }
+          }
+        }
+        return results;
+      }`
+    }
+  });
+  console.log("search (segments):", extractText(searchResult)?.slice(0, 500));
+
+  // 4. Search — count total endpoints
+  const countResult = await client.callTool({
+    name: "search",
+    arguments: {
+      code: `async () => {
+        let count = 0;
+        for (const methods of Object.values(spec.paths)) {
+          count += Object.keys(methods).length;
+        }
+        return { total_operations: count };
+      }`
+    }
+  });
+  console.log("search (count):", extractText(countResult));
+
+  // 5. Search — inspect a specific endpoint
+  const inspectResult = await client.callTool({
+    name: "search",
+    arguments: {
+      code: `async () => {
+        const op = spec.paths['/services/data/v64.0/ssot/query-sql']?.post;
+        return { summary: op?.summary, tags: op?.tags };
+      }`
+    }
+  });
+  console.log("search (inspect):", extractText(inspectResult));
+
+  // 6. Execute — only if authenticated
   let authenticated = false;
   try {
+    const authText = extractText(auth);
     authenticated = Boolean(authText && JSON.parse(authText).authenticated);
   } catch {
     authenticated = false;
   }
 
   if (authenticated) {
-    try {
-      readExecute = await client.callTool({
-        name: "execute",
-        arguments: {
-          operation_id: "GET /api/v1/metadata/"
-        }
-      });
-    } catch (error) {
-      executeError = String(error);
-    }
+    const execResult = await client.callTool({
+      name: "execute",
+      arguments: {
+        code: `async () => {
+          return await salesforce.request({
+            method: "GET",
+            path: "/services/data/v64.0/ssot/data-streams"
+          });
+        }`
+      }
+    });
+    console.log("execute (data-streams):", extractText(execResult)?.slice(0, 500));
+  } else {
+    console.log("execute: skipped (not authenticated)");
   }
 
-  console.log(
-    JSON.stringify(
-      {
-        server_url: serverUrl,
-        user_id: userId,
-        tools: tools.tools.map((tool) => tool.name).sort(),
-        auth_status: authText,
-        search_result: extractText(search),
-        execute_is_error: readExecute ? Boolean(readExecute.isError) : null,
-        execute_excerpt: readExecute ? extractText(readExecute)?.slice(0, 1000) : null,
-        execute_error: executeError
-      },
-      null,
-      2
-    )
-  );
+  console.log("\nSmoke test complete.");
 } finally {
   await client.close().catch(() => {});
   await transport.terminateSession().catch(() => {});

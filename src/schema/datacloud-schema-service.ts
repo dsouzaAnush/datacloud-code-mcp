@@ -10,15 +10,16 @@ import {
   normalizeDataCloudCatalog,
   operationsFromOpenApiDocument
 } from "./catalog.js";
+import { bundledExtrasPath, bundledSpecPath } from "./bundled-spec.js";
+import { deepMerge, extractTags, processSpec, type ResolvedSpec } from "./spec-processor.js";
 
 interface CatalogCachePayload {
-  version: 1;
+  version: 2;
   cachedAt: string;
-  openApiEtag?: string;
-  openApiLastModified?: string;
   openApiFingerprint?: string;
   operations: PlatformOperation[];
   rootSchema: JsonSchema;
+  resolvedSpec: ResolvedSpec;
   docsContext: string;
 }
 
@@ -40,6 +41,8 @@ function stripMdx(input: string): string {
     .trim();
 }
 
+const EMPTY_SPEC: ResolvedSpec = { paths: {} };
+
 export class DataCloudSchemaService {
   private operations: PlatformOperation[] = [];
 
@@ -47,17 +50,21 @@ export class DataCloudSchemaService {
 
   private rootSchema?: JsonSchema;
 
+  private resolvedSpec: ResolvedSpec = EMPTY_SPEC;
+
   private docsContext = "";
+
+  private tags: string[] = [];
 
   private refreshInFlight?: Promise<void>;
 
   private cacheLoaded = false;
 
+  private openApiFingerprint?: string;
+
   private openApiEtag?: string;
 
   private openApiLastModified?: string;
-
-  private openApiFingerprint?: string;
 
   constructor(
     private readonly config: AppConfig,
@@ -76,9 +83,10 @@ export class DataCloudSchemaService {
       const parsed = JSON.parse(raw) as Partial<CatalogCachePayload>;
 
       if (
-        parsed.version !== 1 ||
+        parsed.version !== 2 ||
         !Array.isArray(parsed.operations) ||
         !parsed.rootSchema ||
+        !parsed.resolvedSpec ||
         typeof parsed.docsContext !== "string"
       ) {
         this.logger.warn(
@@ -93,9 +101,9 @@ export class DataCloudSchemaService {
       this.operationById = new Map(
         parsed.operations.map((operation) => [operation.operationId, operation])
       );
+      this.resolvedSpec = parsed.resolvedSpec;
+      this.tags = extractTags(parsed.resolvedSpec);
       this.docsContext = parsed.docsContext;
-      this.openApiEtag = parsed.openApiEtag;
-      this.openApiLastModified = parsed.openApiLastModified;
       this.openApiFingerprint = parsed.openApiFingerprint;
 
       this.logger.info(
@@ -141,8 +149,8 @@ export class DataCloudSchemaService {
   private async refreshInternal(force: boolean): Promise<void> {
     await this.bootstrapFromCache();
 
-    const openApiRaw = await this.loadOpenApiSpec(force);
-    if (!openApiRaw) {
+    const baseRaw = await this.loadOpenApiSpec(force);
+    if (!baseRaw) {
       if (this.operations.length > 0) {
         this.logger.debug("Data Cloud OpenAPI unchanged; keeping cached catalog");
         return;
@@ -150,25 +158,36 @@ export class DataCloudSchemaService {
       throw new Error("Unable to load Data Cloud OpenAPI and no cache exists");
     }
 
-    const parsed = YAML.parse(openApiRaw) as Record<string, unknown>;
-    const operations = operationsFromOpenApiDocument(parsed);
-    const openApiDocsContext = docsContextFromOpenApiDocument(parsed);
+    let baseDoc = YAML.parse(baseRaw) as Record<string, unknown>;
+
+    const extrasRaw = await this.loadExtras();
+    if (extrasRaw) {
+      const extrasDoc = YAML.parse(extrasRaw) as Record<string, unknown>;
+      baseDoc = mergeOpenApi(baseDoc, extrasDoc);
+    }
+
+    const operations = operationsFromOpenApiDocument(baseDoc);
+    const openApiDocsContext = docsContextFromOpenApiDocument(baseDoc);
     const localDocsContext = await this.loadDocsContextFromFilesystem();
 
     const normalized = normalizeDataCloudCatalog({
       operations,
       rootSchema: {
-        ...(parsed as Record<string, unknown>),
-        definitions: ((parsed.components as Record<string, unknown> | undefined)?.schemas ??
+        ...(baseDoc as Record<string, unknown>),
+        definitions: ((baseDoc.components as Record<string, unknown> | undefined)?.schemas ??
           {}) as Record<string, unknown>
       }
     });
+
+    const resolvedSpec = processSpec(baseDoc);
 
     this.operations = normalized.operations;
     this.rootSchema = normalized.rootSchema;
     this.operationById = new Map(
       normalized.operations.map((operation) => [operation.operationId, operation])
     );
+    this.resolvedSpec = resolvedSpec;
+    this.tags = extractTags(resolvedSpec);
     this.docsContext = [openApiDocsContext, localDocsContext]
       .filter(Boolean)
       .join(" ")
@@ -177,7 +196,7 @@ export class DataCloudSchemaService {
     this.logger.info(
       {
         operations: this.operations.length,
-        openapi: this.config.dataCloudOpenApiPath
+        tags: extractTags(resolvedSpec).length
       },
       "Data Cloud operation catalog refreshed"
     );
@@ -188,11 +207,31 @@ export class DataCloudSchemaService {
   private async loadOpenApiSpec(force: boolean): Promise<string | null> {
     const source = this.config.dataCloudOpenApiPath;
 
-    if (isHttpUrl(source)) {
+    if (source && isHttpUrl(source)) {
       return this.loadOpenApiFromUrl(source, force);
     }
 
-    return this.loadOpenApiFromFile(source, force);
+    const filePath = source || bundledSpecPath();
+    if (!filePath) {
+      this.logger.error(
+        "DATACLOUD_OPENAPI_PATH is empty and no bundled spec found at src/schema/data360-api.bundled.yaml"
+      );
+      return null;
+    }
+
+    return this.loadOpenApiFromFile(filePath, force);
+  }
+
+  private async loadExtras(): Promise<string | null> {
+    const extrasPath = bundledExtrasPath();
+    if (!extrasPath) return null;
+
+    try {
+      return await readFile(extrasPath, "utf8");
+    } catch (error) {
+      this.logger.warn({ err: error, extrasPath }, "Failed to read d360-extras.yaml");
+      return null;
+    }
   }
 
   private async loadOpenApiFromUrl(url: string, force: boolean): Promise<string | null> {
@@ -208,14 +247,9 @@ export class DataCloudSchemaService {
     }
 
     try {
-      const response = await this.fetchFn(url, {
-        method: "GET",
-        headers
-      });
+      const response = await this.fetchFn(url, { method: "GET", headers });
 
-      if (response.status === 304) {
-        return null;
-      }
+      if (response.status === 304) return null;
 
       if (!response.ok) {
         this.logger.warn({ url, status: response.status }, "Failed to fetch Data Cloud OpenAPI URL");
@@ -224,8 +258,7 @@ export class DataCloudSchemaService {
 
       const raw = await response.text();
       this.openApiEtag = response.headers.get("etag") ?? this.openApiEtag;
-      this.openApiLastModified =
-        response.headers.get("last-modified") ?? this.openApiLastModified;
+      this.openApiLastModified = response.headers.get("last-modified") ?? this.openApiLastModified;
       this.openApiFingerprint = sha256(raw);
 
       return raw;
@@ -255,6 +288,8 @@ export class DataCloudSchemaService {
 
   private async loadDocsContextFromFilesystem(): Promise<string> {
     const docsRoot = this.config.dataCloudDocsPath;
+    if (!docsRoot) return "";
+
     const paths = [
       "getting-started/quickstart.mdx",
       "apis/query-api/query-services.mdx",
@@ -266,18 +301,18 @@ export class DataCloudSchemaService {
       "apis/connect-api/identity-resolution.mdx"
     ];
 
-    const chunks: string[] = [];
-    for (const relativePath of paths) {
-      const absolutePath = join(docsRoot, relativePath);
-      try {
-        const raw = await readFile(absolutePath, "utf8");
-        chunks.push(stripMdx(raw));
-      } catch {
-        // Ignore missing docs files.
-      }
-    }
+    const chunks = await Promise.all(
+      paths.map(async (relativePath) => {
+        try {
+          const raw = await readFile(join(docsRoot, relativePath), "utf8");
+          return stripMdx(raw);
+        } catch {
+          return "";
+        }
+      })
+    );
 
-    return chunks.join(" ").slice(0, 80_000);
+    return chunks.filter(Boolean).join(" ").slice(0, 80_000);
   }
 
   private async persistCache(): Promise<void> {
@@ -286,13 +321,12 @@ export class DataCloudSchemaService {
     }
 
     const payload: CatalogCachePayload = {
-      version: 1,
+      version: 2,
       cachedAt: new Date().toISOString(),
-      openApiEtag: this.openApiEtag,
-      openApiLastModified: this.openApiLastModified,
       openApiFingerprint: this.openApiFingerprint,
       operations: this.operations,
       rootSchema: this.rootSchema,
+      resolvedSpec: this.resolvedSpec,
       docsContext: this.docsContext
     };
 
@@ -319,7 +353,41 @@ export class DataCloudSchemaService {
     return this.rootSchema;
   }
 
+  getResolvedSpec(): ResolvedSpec {
+    return this.resolvedSpec;
+  }
+
   getDocsContext(): string {
     return this.docsContext;
   }
+
+  getTags(): string[] {
+    return this.tags;
+  }
+}
+
+function mergeOpenApi(
+  base: Record<string, unknown>,
+  extras: Record<string, unknown>
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+
+  if (extras.paths) {
+    out.paths = { ...(base.paths as Record<string, unknown> | undefined), ...(extras.paths as Record<string, unknown>) };
+  }
+
+  if (extras.tags) {
+    const baseTags = (base.tags as unknown[]) ?? [];
+    const extraTags = extras.tags as unknown[];
+    out.tags = [...baseTags, ...extraTags];
+  }
+
+  if (extras.components) {
+    out.components = deepMerge(
+      (base.components as Record<string, unknown>) ?? {},
+      extras.components as Record<string, unknown>
+    );
+  }
+
+  return out;
 }

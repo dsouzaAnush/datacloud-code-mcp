@@ -1,0 +1,824 @@
+openapi: 3.0.3
+info:
+  title: Salesforce Data 360 API (d360 extras)
+  version: v66.0
+  description: |
+    Supplemental Data Cloud / Data 360 endpoints derived from the d360-mcp-server
+    (Salesforce sample, Java) tool catalog and Postman collection. Schemas are
+    intentionally permissive (objects with additionalProperties) so agents can
+    explore via search() and pass arbitrary bodies via execute(); validate the
+    final shape against the platform's own error responses.
+tags:
+  - { name: dmo, description: Data Model Objects }
+  - { name: dlo, description: Data Lake Objects }
+  - { name: mappings, description: DMO and field mappings }
+  - { name: data-streams, description: Data stream lifecycle and runs }
+  - { name: connectors, description: Connector types and configured connections }
+  - { name: calculated-insights, description: CI lifecycle, run, validate }
+  - { name: segments, description: Segment lifecycle, publish, members }
+  - { name: identity-resolution, description: IR rulesets, jobs, profile matches }
+  - { name: activations, description: Activations, targets, sync, history }
+  - { name: data-actions, description: Data Actions and Action Targets }
+  - { name: data-transforms, description: Batch and streaming SQL transforms }
+  - { name: data-spaces, description: Data Spaces and members }
+  - { name: datakits, description: DataKit packaging and deploy }
+  - { name: gdpr, description: GDPR read/erasure }
+  - { name: search-indexes, description: Search indexes and full-text query }
+  - { name: standard-mappings, description: Bundled standard field mappings }
+  - { name: eventing, description: a360 event publish }
+  - { name: semantic-data-models, description: Semantic Data Model (SDM) primitives }
+  - { name: query, description: SQL/profile/insight/data-graph query family }
+
+paths:
+  # ── Query family extras ────────────────────────────────────────────────
+  /services/data/v64.0/ssot/query:
+    post:
+      tags: [query]
+      summary: Execute ANSI SQL (V1)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, additionalProperties: true } } }
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/queryv2:
+    post:
+      tags: [query]
+      summary: Execute ANSI SQL (V2 with nextBatchId pagination)
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, additionalProperties: true } } }
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/profile:
+    post:
+      tags: [query]
+      summary: Query unified profiles by ID
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, additionalProperties: true } } }
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/profile/metadata:
+    get:
+      tags: [query]
+      summary: Get profile metadata schema
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/insights:
+    post:
+      tags: [query, calculated-insights]
+      summary: Query calculated insight results
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, additionalProperties: true } } }
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/insights/metadata:
+    get:
+      tags: [query, calculated-insights]
+      summary: List calculated insight metadata
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/data-graphs/{name}/query:
+    post:
+      tags: [query]
+      summary: Query a data graph
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, additionalProperties: true } } }
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/data-graphs/{name}:
+    get:
+      tags: [query]
+      summary: Get data graph metadata
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+
+  # ── Metadata search ───────────────────────────────────────────────────
+  /services/data/v64.0/ssot/metadata:
+    get:
+      tags: [query]
+      summary: Get full metadata for a Data Cloud entity
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/metadata-entities:
+    get:
+      tags: [query]
+      summary: List metadata entities by type/category
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/connect/search/metadata/results:
+    post:
+      tags: [query]
+      summary: Search metadata by natural language
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, additionalProperties: true } } }
+      responses: { "200": { description: OK } }
+
+  # ── DMO / DLO / Mappings ──────────────────────────────────────────────
+  /services/data/v64.0/ssot/data-model-objects:
+    get:
+      tags: [dmo]
+      summary: List all Data Model Objects
+      responses: { "200": { description: OK } }
+    post:
+      tags: [dmo]
+      summary: Create a Data Model Object
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/data-model-objects/{dmoName}:
+    get:
+      tags: [dmo]
+      summary: Get DMO schema and field definitions
+      parameters: [ { name: dmoName, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    patch:
+      tags: [dmo]
+      summary: Update a DMO
+      parameters: [ { name: dmoName, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [dmo]
+      summary: Delete a DMO
+      parameters: [ { name: dmoName, in: path, required: true, schema: { type: string } } ]
+      responses: { "204": { description: Deleted } }
+
+  /services/data/v64.0/ssot/data-lake-objects:
+    get:
+      tags: [dlo]
+      summary: List Data Lake Objects
+      responses: { "200": { description: OK } }
+    post:
+      tags: [dlo]
+      summary: Create a Data Lake Object
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/data-lake-objects/{dloName}:
+    get:
+      tags: [dlo]
+      summary: Get a Data Lake Object
+      parameters: [ { name: dloName, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    patch:
+      tags: [dlo]
+      summary: Update a Data Lake Object
+      parameters: [ { name: dloName, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [dlo]
+      summary: Delete a Data Lake Object
+      parameters: [ { name: dloName, in: path, required: true, schema: { type: string } } ]
+      responses: { "204": { description: Deleted } }
+
+  /services/data/v64.0/ssot/dmo-mapping:
+    get:
+      tags: [mappings]
+      summary: List DMO field mappings
+      responses: { "200": { description: OK } }
+    post:
+      tags: [mappings]
+      summary: Create DMO field mapping
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/dmo-mapping/{mappingId}:
+    get:
+      tags: [mappings]
+      summary: Get DMO mapping
+      parameters: [ { name: mappingId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    patch:
+      tags: [mappings]
+      summary: Update DMO mapping
+      parameters: [ { name: mappingId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [mappings]
+      summary: Delete DMO mapping
+      parameters: [ { name: mappingId, in: path, required: true, schema: { type: string } } ]
+      responses: { "204": { description: Deleted } }
+  /services/data/v64.0/ssot/field-mappings:
+    post:
+      tags: [mappings]
+      summary: Bulk create or update field mappings
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/field-mappings/{fieldMappingId}:
+    delete:
+      tags: [mappings]
+      summary: Delete a field mapping
+      parameters: [ { name: fieldMappingId, in: path, required: true, schema: { type: string } } ]
+      responses: { "204": { description: Deleted } }
+
+  # ── Data Streams ──────────────────────────────────────────────────────
+  /services/data/v64.0/ssot/data-streams/{streamId}/actions/run:
+    post:
+      tags: [data-streams]
+      summary: Trigger data stream ingestion run
+      parameters: [ { name: streamId, in: path, required: true, schema: { type: string } } ]
+      responses: { "202": { description: Accepted } }
+
+  # ── Connectors / Connections ──────────────────────────────────────────
+  /services/data/v64.0/ssot/connectors:
+    get:
+      tags: [connectors]
+      summary: List available connector types
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/connectors/{connectorType}/metadata:
+    get:
+      tags: [connectors]
+      summary: Get connector metadata/schema
+      parameters: [ { name: connectorType, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/connections:
+    get:
+      tags: [connectors]
+      summary: List configured connections (requires connectorType query)
+      parameters: [ { name: connectorType, in: query, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    post:
+      tags: [connectors]
+      summary: Create a connection (requires connectorType query)
+      parameters: [ { name: connectorType, in: query, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/connections/{connectionId}:
+    get:
+      tags: [connectors]
+      summary: Get connection details
+      parameters:
+        - { name: connectionId, in: path, required: true, schema: { type: string } }
+        - { name: connectorType, in: query, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+    patch:
+      tags: [connectors]
+      summary: Update a connection
+      parameters:
+        - { name: connectionId, in: path, required: true, schema: { type: string } }
+        - { name: connectorType, in: query, required: true, schema: { type: string } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [connectors]
+      summary: Delete a connection
+      parameters:
+        - { name: connectionId, in: path, required: true, schema: { type: string } }
+        - { name: connectorType, in: query, required: true, schema: { type: string } }
+      responses: { "204": { description: Deleted } }
+  /services/data/v64.0/ssot/connections/{connectionId}/test:
+    post:
+      tags: [connectors]
+      summary: Test a connection's credentials
+      parameters:
+        - { name: connectionId, in: path, required: true, schema: { type: string } }
+        - { name: connectorType, in: query, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/connections/{connectionId}/endpoints:
+    get:
+      tags: [connectors]
+      summary: List endpoints exposed by a connection
+      parameters:
+        - { name: connectionId, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+
+  # ── Calculated Insights ───────────────────────────────────────────────
+  /services/data/v64.0/ssot/calculated-insights:
+    get: { tags: [calculated-insights], summary: List calculated insights, responses: { "200": { description: OK } } }
+    post:
+      tags: [calculated-insights]
+      summary: Create calculated insight
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/calculated-insights/{ciName}:
+    get:
+      tags: [calculated-insights]
+      summary: Get calculated insight definition
+      parameters: [ { name: ciName, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    patch:
+      tags: [calculated-insights]
+      summary: Update calculated insight
+      parameters: [ { name: ciName, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [calculated-insights]
+      summary: Delete calculated insight
+      parameters: [ { name: ciName, in: path, required: true, schema: { type: string } } ]
+      responses: { "204": { description: Deleted } }
+  /services/data/v64.0/ssot/calculated-insights/{ciName}/actions/run:
+    post:
+      tags: [calculated-insights]
+      summary: Trigger CI computation
+      parameters: [ { name: ciName, in: path, required: true, schema: { type: string } } ]
+      responses: { "202": { description: Accepted } }
+    get:
+      tags: [calculated-insights]
+      summary: Check CI run status
+      parameters: [ { name: ciName, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/calculated-insights/{ciName}/actions/enable:
+    post:
+      tags: [calculated-insights]
+      summary: Enable a calculated insight
+      parameters: [ { name: ciName, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/calculated-insights/{ciName}/actions/disable:
+    post:
+      tags: [calculated-insights]
+      summary: Disable a calculated insight
+      parameters: [ { name: ciName, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/calculated-insights/actions/validate:
+    post:
+      tags: [calculated-insights]
+      summary: Validate CI SQL (dry-run)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+
+  # ── Segments (extras) ─────────────────────────────────────────────────
+  /services/data/v64.0/ssot/segments/{segmentId}/overlap:
+    get:
+      tags: [segments]
+      summary: Analyze segment overlap with other segments
+      parameters:
+        - { name: segmentId, in: path, required: true, schema: { type: string } }
+        - { name: compareWith, in: query, required: true, schema: { type: string }, description: "Comma-separated segment IDs to compare" }
+      responses: { "200": { description: OK } }
+
+  # ── Identity Resolution (extras) ──────────────────────────────────────
+  /services/data/v64.0/ssot/identity-resolution/{rulesetId}/actions/publish:
+    post:
+      tags: [identity-resolution]
+      summary: Publish IR ruleset
+      parameters: [ { name: rulesetId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/identity-resolution/{rulesetId}/actions/run:
+    post:
+      tags: [identity-resolution]
+      summary: Trigger IR computation
+      parameters: [ { name: rulesetId, in: path, required: true, schema: { type: string } } ]
+      responses: { "202": { description: Accepted } }
+    get:
+      tags: [identity-resolution]
+      summary: Check IR run status
+      parameters: [ { name: rulesetId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/identity-resolution/profiles/{unifiedId}/matches:
+    get:
+      tags: [identity-resolution]
+      summary: Get match history for a unified profile
+      parameters: [ { name: unifiedId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+
+  # ── Activations (extras) ──────────────────────────────────────────────
+  /services/data/v64.0/ssot/activations:
+    post:
+      tags: [activations]
+      summary: Create an activation
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/activations/{activationId}:
+    patch:
+      tags: [activations]
+      summary: Update an activation (pause/resume)
+      parameters: [ { name: activationId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [activations]
+      summary: Delete an activation
+      parameters: [ { name: activationId, in: path, required: true, schema: { type: string } } ]
+      responses: { "204": { description: Deleted } }
+  /services/data/v64.0/ssot/activations/{activationId}/history:
+    get:
+      tags: [activations]
+      summary: Sync history for an activation
+      parameters:
+        - { name: activationId, in: path, required: true, schema: { type: string } }
+        - { name: startDate, in: query, schema: { type: string, format: date-time } }
+        - { name: endDate, in: query, schema: { type: string, format: date-time } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/activation-targets:
+    post:
+      tags: [activations]
+      summary: Create an activation target
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/activation-targets/{targetId}:
+    patch:
+      tags: [activations]
+      summary: Update an activation target
+      parameters: [ { name: targetId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [activations]
+      summary: Delete an activation target
+      parameters: [ { name: targetId, in: path, required: true, schema: { type: string } } ]
+      responses: { "204": { description: Deleted } }
+
+  # ── Data Actions ──────────────────────────────────────────────────────
+  /services/data/v64.0/ssot/data-actions:
+    get: { tags: [data-actions], summary: List data actions, responses: { "200": { description: OK } } }
+    post:
+      tags: [data-actions]
+      summary: Create a data action
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/data-actions/{actionId}:
+    get:
+      tags: [data-actions]
+      summary: Get a data action
+      parameters: [ { name: actionId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/data-action-targets:
+    get: { tags: [data-actions], summary: List action targets, responses: { "200": { description: OK } } }
+    post:
+      tags: [data-actions]
+      summary: Create action target
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/data-action-targets/{targetId}:
+    get:
+      tags: [data-actions]
+      summary: Get an action target
+      parameters: [ { name: targetId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    patch:
+      tags: [data-actions]
+      summary: Update an action target
+      parameters: [ { name: targetId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [data-actions]
+      summary: Delete an action target
+      parameters: [ { name: targetId, in: path, required: true, schema: { type: string } } ]
+      responses: { "204": { description: Deleted } }
+
+  # ── Data Transforms ───────────────────────────────────────────────────
+  /services/data/v64.0/ssot/data-transforms:
+    get: { tags: [data-transforms], summary: List data transforms, responses: { "200": { description: OK } } }
+    post:
+      tags: [data-transforms]
+      summary: Create a transform
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/data-transforms/{transformId}:
+    get:
+      tags: [data-transforms]
+      summary: Get a transform definition
+      parameters: [ { name: transformId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    patch:
+      tags: [data-transforms]
+      summary: Update a transform
+      parameters: [ { name: transformId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [data-transforms]
+      summary: Delete a transform
+      parameters: [ { name: transformId, in: path, required: true, schema: { type: string } } ]
+      responses: { "204": { description: Deleted } }
+  /services/data/v64.0/ssot/data-transforms/{transformId}/actions/run:
+    post:
+      tags: [data-transforms]
+      summary: Trigger transform run
+      parameters: [ { name: transformId, in: path, required: true, schema: { type: string } } ]
+      responses: { "202": { description: Accepted } }
+  /services/data/v64.0/ssot/data-transforms/{transformId}/actions/validate:
+    post:
+      tags: [data-transforms]
+      summary: Validate transform SQL
+      parameters: [ { name: transformId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/data-transforms/{transformId}/schedule:
+    get:
+      tags: [data-transforms]
+      summary: Get transform schedule
+      parameters: [ { name: transformId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    post:
+      tags: [data-transforms]
+      summary: Set transform schedule
+      parameters: [ { name: transformId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+
+  # ── Data Spaces ───────────────────────────────────────────────────────
+  /services/data/v64.0/ssot/data-spaces:
+    get: { tags: [data-spaces], summary: List data spaces, responses: { "200": { description: OK } } }
+    post:
+      tags: [data-spaces]
+      summary: Create a data space
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/data-spaces/{spaceId}:
+    get:
+      tags: [data-spaces]
+      summary: Get a data space
+      parameters: [ { name: spaceId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    patch:
+      tags: [data-spaces]
+      summary: Update a data space
+      parameters: [ { name: spaceId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [data-spaces]
+      summary: Delete a data space
+      parameters: [ { name: spaceId, in: path, required: true, schema: { type: string } } ]
+      responses: { "204": { description: Deleted } }
+  /services/data/v64.0/ssot/data-spaces/{spaceId}/members:
+    get:
+      tags: [data-spaces]
+      summary: List space members
+      parameters: [ { name: spaceId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    post:
+      tags: [data-spaces]
+      summary: Add a member to a space
+      parameters: [ { name: spaceId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/data-spaces/{spaceId}/members/{memberId}:
+    delete:
+      tags: [data-spaces]
+      summary: Remove a member from a space
+      parameters:
+        - { name: spaceId, in: path, required: true, schema: { type: string } }
+        - { name: memberId, in: path, required: true, schema: { type: string } }
+      responses: { "204": { description: Deleted } }
+
+  # ── DataKits ──────────────────────────────────────────────────────────
+  /services/data/v64.0/ssot/data-kits:
+    get: { tags: [datakits], summary: List datakits, responses: { "200": { description: OK } } }
+  /services/data/v64.0/ssot/data-kits/{kitId}:
+    get:
+      tags: [datakits]
+      summary: Get a datakit
+      parameters: [ { name: kitId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/data-kits/{kitId}/manifest:
+    get:
+      tags: [datakits]
+      summary: Get datakit manifest
+      parameters: [ { name: kitId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/data-kits/{kitId}/components:
+    get:
+      tags: [datakits]
+      summary: List datakit components
+      parameters: [ { name: kitId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/data-kits/{kitId}/components/{componentId}/status:
+    get:
+      tags: [datakits]
+      summary: Get datakit component deployment status
+      parameters:
+        - { name: kitId, in: path, required: true, schema: { type: string } }
+        - { name: componentId, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/data-kits/{kitId}/components/{componentId}/dependencies:
+    get:
+      tags: [datakits]
+      summary: Get datakit component dependencies
+      parameters:
+        - { name: kitId, in: path, required: true, schema: { type: string } }
+        - { name: componentId, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/data-kits/{kitId}/update-components:
+    post:
+      tags: [datakits]
+      summary: Deploy a datakit
+      parameters: [ { name: kitId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/data-kits/{kitId}/undeploy:
+    delete:
+      tags: [datakits]
+      summary: Undeploy a datakit
+      parameters: [ { name: kitId, in: path, required: true, schema: { type: string } } ]
+      responses: { "204": { description: Deleted } }
+
+  # ── GDPR ──────────────────────────────────────────────────────────────
+  /services/data/v64.0/ssot/gdpr/read:
+    post:
+      tags: [gdpr]
+      summary: GDPR right-to-access (single individual)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/gdpr/bulk-read:
+    post:
+      tags: [gdpr]
+      summary: GDPR right-to-access (bulk)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/gdpr/request:
+    post:
+      tags: [gdpr]
+      summary: GDPR erasure / portability request
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "202": { description: Accepted } }
+
+  # ── Search Indexes ────────────────────────────────────────────────────
+  /services/data/v64.0/ssot/search-indexes:
+    get: { tags: [search-indexes], summary: List search indexes, responses: { "200": { description: OK } } }
+    post:
+      tags: [search-indexes]
+      summary: Create a search index
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/search-indexes/{indexId}:
+    get:
+      tags: [search-indexes]
+      summary: Get a search index
+      parameters: [ { name: indexId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    patch:
+      tags: [search-indexes]
+      summary: Update a search index
+      parameters: [ { name: indexId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [search-indexes]
+      summary: Delete a search index
+      parameters: [ { name: indexId, in: path, required: true, schema: { type: string } } ]
+      responses: { "204": { description: Deleted } }
+  /services/data/v64.0/ssot/search-indexes/{indexId}/query:
+    post:
+      tags: [search-indexes]
+      summary: Hybrid full-text query against a search index
+      parameters: [ { name: indexId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+
+  # ── Standard mappings ─────────────────────────────────────────────────
+  /services/data/v64.0/ssot/standard-mappings/preview:
+    get:
+      tags: [standard-mappings]
+      summary: Preview standard mappings for a source object
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/standard-mappings/create:
+    post:
+      tags: [standard-mappings]
+      summary: Bulk-create recommended standard mappings
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+
+  # ── Eventing (a360 events) ────────────────────────────────────────────
+  /services/data/v64.0/a360/event:
+    post:
+      tags: [eventing]
+      summary: Publish a single a360 event
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/a360/events:
+    post:
+      tags: [eventing]
+      summary: Publish a batch of a360 events (up to 1000)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { type: object, additionalProperties: true }
+      responses: { "201": { description: Created } }
+
+  # ── Semantic Data Models (SDM) ────────────────────────────────────────
+  /services/data/v64.0/ssot/semantic/models:
+    get: { tags: [semantic-data-models], summary: List semantic models, responses: { "200": { description: OK } } }
+    post:
+      tags: [semantic-data-models]
+      summary: Create semantic model
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/semantic/models/{modelId}:
+    get:
+      tags: [semantic-data-models]
+      summary: Get semantic model
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    patch:
+      tags: [semantic-data-models]
+      summary: Update semantic model
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [semantic-data-models]
+      summary: Delete semantic model
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      responses: { "204": { description: Deleted } }
+  /services/data/v64.0/ssot/semantic/models/{modelId}/clone:
+    post:
+      tags: [semantic-data-models]
+      summary: Clone semantic model
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/semantic/models/{modelId}/validate:
+    post:
+      tags: [semantic-data-models]
+      summary: Validate semantic model
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/semantic/models/{modelId}/dependencies:
+    get:
+      tags: [semantic-data-models]
+      summary: Get semantic model dependencies
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+  /services/data/v64.0/ssot/semantic/models/{modelId}/data-objects:
+    get:
+      tags: [semantic-data-models]
+      summary: List data objects
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    post:
+      tags: [semantic-data-models]
+      summary: Create data object
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/semantic/models/{modelId}/data-objects/{objectId}:
+    get:
+      tags: [semantic-data-models]
+      summary: Get data object
+      parameters:
+        - { name: modelId, in: path, required: true, schema: { type: string } }
+        - { name: objectId, in: path, required: true, schema: { type: string } }
+      responses: { "200": { description: OK } }
+    patch:
+      tags: [semantic-data-models]
+      summary: Update data object
+      parameters:
+        - { name: modelId, in: path, required: true, schema: { type: string } }
+        - { name: objectId, in: path, required: true, schema: { type: string } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [semantic-data-models]
+      summary: Delete data object
+      parameters:
+        - { name: modelId, in: path, required: true, schema: { type: string } }
+        - { name: objectId, in: path, required: true, schema: { type: string } }
+      responses: { "204": { description: Deleted } }
+  /services/data/v64.0/ssot/semantic/models/{modelId}/calculated-dimensions:
+    get:
+      tags: [semantic-data-models]
+      summary: List calculated dimensions
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    post:
+      tags: [semantic-data-models]
+      summary: Create calculated dimension
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/semantic/models/{modelId}/calculated-measurements:
+    get:
+      tags: [semantic-data-models]
+      summary: List calculated measurements
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    post:
+      tags: [semantic-data-models]
+      summary: Create calculated measurement
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/semantic/models/{modelId}/metrics:
+    get:
+      tags: [semantic-data-models]
+      summary: List metrics
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    post:
+      tags: [semantic-data-models]
+      summary: Create metric
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/semantic/models/{modelId}/relationships:
+    get:
+      tags: [semantic-data-models]
+      summary: List relationships
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      responses: { "200": { description: OK } }
+    post:
+      tags: [semantic-data-models]
+      summary: Create relationship
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "201": { description: Created } }
+  /services/data/v64.0/ssot/semantic/models/{modelId}/query:
+    post:
+      tags: [semantic-data-models]
+      summary: Query semantic model
+      parameters: [ { name: modelId, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+      responses: { "200": { description: OK } }

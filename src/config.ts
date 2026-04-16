@@ -8,16 +8,13 @@ const envSchema = z.object({
   HOST: z.string().default("0.0.0.0"),
   LOG_LEVEL: z.string().default("info"),
 
-  DATACLOUD_OPENAPI_PATH: z
-    .string()
-    .default("/Users/anush.dsouza/startup/Aura12/work/datacloud-docs/openapi/data360-api.yaml"),
-  DATACLOUD_DOCS_PATH: z
-    .string()
-    .default("/Users/anush.dsouza/startup/Aura12/work/datacloud-docs"),
+  // Empty string means "use the bundled spec next to the compiled schema service".
+  DATACLOUD_OPENAPI_PATH: z.string().default(""),
+  DATACLOUD_DOCS_PATH: z.string().default(""),
   DATACLOUD_API_BASE_URL: z.url().default("https://login.salesforce.com"),
   DATACLOUD_ACCEPT_HEADER: z.string().default("application/json"),
   SCHEMA_REFRESH_MS: z.coerce.number().int().positive().default(6 * 60 * 60 * 1000),
-  CATALOG_CACHE_PATH: z.string().default("./data/catalog-cache.json"),
+  CATALOG_CACHE_PATH: z.string().default("/tmp/datacloud-catalog-cache.json"),
 
   ALLOW_WRITES: z
     .string()
@@ -29,9 +26,12 @@ const envSchema = z.object({
   EXECUTE_MAX_BODY_BYTES: z.coerce.number().int().positive().default(48_000),
   EXECUTE_BODY_PREVIEW_CHARS: z.coerce.number().int().positive().default(6000),
   USER_ID_HEADER: z.string().default("x-user-id"),
-  WRITE_CONFIRMATION_SECRET: z.string().min(8).default("local-dev-secret"),
 
-  TOKEN_STORE_PATH: z.string().default("./data/tokens.json"),
+  SANDBOX_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
+  SANDBOX_MAX_OUTPUT_BYTES: z.coerce.number().int().positive().default(96_000),
+  SANDBOX_FETCH_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
+
+  TOKEN_STORE_PATH: z.string().default("/tmp/datacloud-tokens.json"),
   TOKEN_ENCRYPTION_KEY_BASE64: z.string().optional(),
 
   SALESFORCE_OAUTH_CLIENT_ID: z.string().optional(),
@@ -48,7 +48,18 @@ const envSchema = z.object({
   SALESFORCE_OAUTH_REDIRECT_URI: z
     .url()
     .default("http://localhost:3000/oauth/callback"),
-  DATACLOUD_TOKEN_EXCHANGE_PATH: z.string().default("/services/a360/token")
+  DATACLOUD_TOKEN_EXCHANGE_PATH: z.string().default("/services/a360/token"),
+
+  // d360-compatible auth: same env var names as the Java d360-mcp-server.
+  // CDP_AUTH_FLOW: "access_token" | "client_credentials" | "username_password" | "auto" | "oauth"
+  CDP_AUTH_FLOW: z.enum(["auto", "access_token", "client_credentials", "username_password", "oauth"]).default("auto"),
+  CDP_LOGIN_URL: z.url().default("https://login.salesforce.com"),
+  CDP_CLIENT_ID: z.string().optional(),
+  CDP_CLIENT_SECRET: z.string().optional(),
+  CDP_USERNAME: z.string().optional(),
+  CDP_PASSWORD: z.string().optional(),
+  CDP_ACCESS_TOKEN: z.string().optional(),
+  CDP_INSTANCE_URL: z.string().optional()
 });
 
 const parsed = envSchema.parse(process.env);
@@ -72,7 +83,10 @@ export const appConfig = {
   executeMaxBodyBytes: parsed.EXECUTE_MAX_BODY_BYTES,
   executeBodyPreviewChars: parsed.EXECUTE_BODY_PREVIEW_CHARS,
   userIdHeader: parsed.USER_ID_HEADER.toLowerCase(),
-  writeConfirmationSecret: parsed.WRITE_CONFIRMATION_SECRET,
+
+  sandboxTimeoutMs: parsed.SANDBOX_TIMEOUT_MS,
+  sandboxMaxOutputBytes: parsed.SANDBOX_MAX_OUTPUT_BYTES,
+  sandboxFetchTimeoutMs: parsed.SANDBOX_FETCH_TIMEOUT_MS,
 
   tokenStorePath: parsed.TOKEN_STORE_PATH,
   tokenEncryptionKeyBase64: parsed.TOKEN_ENCRYPTION_KEY_BASE64,
@@ -83,7 +97,16 @@ export const appConfig = {
   oauthAuthorizeUrl: parsed.SALESFORCE_OAUTH_AUTHORIZE_URL,
   oauthTokenUrl: parsed.SALESFORCE_OAUTH_TOKEN_URL,
   oauthRedirectUri: parsed.SALESFORCE_OAUTH_REDIRECT_URI,
-  dataCloudTokenExchangePath: parsed.DATACLOUD_TOKEN_EXCHANGE_PATH
+  dataCloudTokenExchangePath: parsed.DATACLOUD_TOKEN_EXCHANGE_PATH,
+
+  cdpAuthFlow: parsed.CDP_AUTH_FLOW,
+  cdpLoginUrl: parsed.CDP_LOGIN_URL,
+  cdpClientId: parsed.CDP_CLIENT_ID,
+  cdpClientSecret: parsed.CDP_CLIENT_SECRET,
+  cdpUsername: parsed.CDP_USERNAME,
+  cdpPassword: parsed.CDP_PASSWORD,
+  cdpAccessToken: parsed.CDP_ACCESS_TOKEN,
+  cdpInstanceUrl: parsed.CDP_INSTANCE_URL
 };
 
 export type AppConfig = typeof appConfig;

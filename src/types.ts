@@ -37,41 +37,6 @@ export interface PlatformOperation {
   searchText: string;
 }
 
-export interface SearchResultItem {
-  operation_id: string;
-  method: string;
-  path: string;
-  summary: string;
-  required_params: string[];
-  is_mutating: boolean;
-  score: number;
-}
-
-export interface SearchResponse {
-  results: SearchResultItem[];
-}
-
-export interface ExecuteRequest {
-  operation_id: string;
-  path_params?: Record<string, string>;
-  query_params?: Record<string, string | number | boolean>;
-  body?: unknown;
-  dry_run?: boolean;
-  confirm_write_token?: string;
-}
-
-export interface ExecuteResponse {
-  request: {
-    method: string;
-    url: string;
-    operation_id: string;
-  };
-  status: number;
-  headers: Record<string, string>;
-  body: unknown;
-  request_id?: string;
-  warnings?: string[];
-}
 
 export interface OAuthTokenRecord {
   accessToken: string;

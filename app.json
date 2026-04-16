@@ -1,0 +1,41 @@
+{
+  "name": "datacloud-code-mode-mcp",
+  "description": "Salesforce Data Cloud MCP server with Code Mode (search + execute)",
+  "repository": "https://github.com/dsouzaAnush/datacloud-code-mcp",
+  "keywords": ["mcp", "salesforce", "datacloud", "data360", "code-mode"],
+  "buildpacks": [{ "url": "heroku/nodejs" }],
+  "env": {
+    "TOKEN_ENCRYPTION_KEY_BASE64": {
+      "description": "32-byte AES key, base64-encoded. Generate: node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"",
+      "required": true
+    },
+    "ALLOW_WRITES": {
+      "description": "Set to 'true' to allow mutating API calls through execute()",
+      "value": "false"
+    },
+    "SALESFORCE_OAUTH_CLIENT_ID": {
+      "description": "Connected App client ID for OAuth web flow",
+      "required": false
+    },
+    "SALESFORCE_OAUTH_CLIENT_SECRET": {
+      "description": "Connected App client secret",
+      "required": false
+    },
+    "SALESFORCE_OAUTH_REDIRECT_URI": {
+      "description": "OAuth callback URL — must match the deployed Heroku app URL + /oauth/callback",
+      "required": false
+    },
+    "CDP_AUTH_FLOW": {
+      "description": "Auth mode: auto | access_token | client_credentials | username_password | oauth",
+      "value": "auto"
+    },
+    "CDP_ACCESS_TOKEN": {
+      "description": "Salesforce session/access token (for access_token auth mode)",
+      "required": false
+    },
+    "CDP_INSTANCE_URL": {
+      "description": "Salesforce instance URL (e.g., https://your-instance.my.salesforce.com)",
+      "required": false
+    }
+  }
+}

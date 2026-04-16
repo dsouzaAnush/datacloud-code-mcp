@@ -1,23 +1,27 @@
 {
   "name": "datacloud-code-mode-mcp",
-  "version": "0.1.0",
-  "description": "Salesforce Data Cloud (Data360) MCP server with Cloudflare-style search and execute tools",
+  "version": "0.2.0",
+  "description": "Salesforce Data Cloud (Data360) MCP server with Code Mode — search + execute in ~1k tokens",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && cp src/schema/*.yaml dist/schema/",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "seed:token": "node scripts/seed-token-for-datacloud.mjs",
     "smoke:mcp": "node scripts/mcp-smoke-test.mjs"
   },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "keywords": [
     "mcp",
     "salesforce",
     "datacloud",
     "data360",
+    "code-mode",
     "oauth"
   ],
   "author": "",

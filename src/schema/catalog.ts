@@ -6,7 +6,7 @@ import type {
   QueryParameter
 } from "../types.js";
 
-const HTTP_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"] as const;
+import { HTTP_METHODS } from "./spec-processor.js";
 
 type HttpMethod = (typeof HTTP_METHODS)[number];
 
